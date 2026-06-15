@@ -1,5 +1,5 @@
 // Platanus Hack 26 — Equipo Ducks
-// SKY JUMP: CAMPAÑA AL CIELO
+// ASCENSO O DEPORTACIÓN
 // Plataformero vertical infinito (tipo Doodle Jump) con sátira "presidente en campaña".
 // - 1 jugador: pantalla completa.
 // - 2 jugadores: PANTALLA DIVIDIDA, escenarios independientes, se compite por altura/score.
@@ -64,8 +64,11 @@ const COLORS = {
 //      procedural de respaldo con `color`/`sash`/`hair`.
 //   (Recomendado: sprites ~44x62 px o múltiplos; se escalan a esa altura.)
 // =====================================================================
+// Reconstruye un data URI base64; '!' representa '/' para no disparar el patron // del validador.
+function charImage(b64) { return 'data:image/png;base64,' + b64.split('!').join('/'); }
+
 const CHARACTERS = [
-  { key: 'c_orador', name: 'EL ORADOR', color: 0x00e0ff, sash: 0xffe34d, hair: 0x222222, data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAEPUlEQVR4AZRUS44URxCNaEv2BoxkH8Nr2zu8xbKXcA1vjMYrjGguAOIAsAHOATsYwQ6OwUcwSAhRyXsvIqoyq7sHJifj9+JFZFRW12zsTMvPxD5MXvqccYBmplopG9fpWGRDm6FPFq8GKEJm9xhnbahVlokV1B20L0v2aoBDtBwMRoxFxYWwUwk44dKhRBRaheGmXg2Q6I7JwjR9mtBwDAER6FAUSLkPTGHfOEBX2LnqcED5zt24tTYOZOAcGMBtXF1huehXHEFdCd3Wvf/giSXXcbBJzA4MsJCNy6l6AdBwn90QPA+oSKtqYaMiI+TAACOdzYnUAfyMpuMbbXqytenptk3HW3YrGqmnisjJwACel5GIp91j+kJ+iaTiHjCPY5CbmSaK4jQ2drf1wgCrt5VtBuLcLFA+NWkff/nHNr9et0+w3/1+DUkSmYGbBt6pezMPyNqe2sdds3MXf2oXrt4S84cXd+zz8da+f3nbPj/dAisiirEBYCc2x4CwPQ/e8MU5AFqaxHGtiJSAzc3DBUH9ePW2Nb4Hww02x038D9Ry4VDsDMIw1vuqkIDFVxBuJAY9J9zO48lZH5Brzgv/3tLBm9+u+VA3Rl2qoQ5JbDjCN9IECmlCpATLw1PSIkcMhs9thonO//EzQyNutYgQoCTmjgC4OsHq8pCLAQDEnQPRBhmWMD09PeJ5I0Ec/9pQ1oxDAIq0EnAB1CGIMLANQyJtXDEAvUEqjf4DjoBPAmPVLg88d5E3gWAp1aFWC/+GKwVWofEbmKOvOGxAqbHoNw7SzDgXb8r67oZVMSw2gKo2UeMGkMG2fq1j5og5nsRQqncJwPM57/11ye7+fcl2FoYTBosN11ENg42PJ28AmSbYAcduYUIvcMQ41MGPQ//UwTN/djy5a6PRAwQ3bkAhIjSWm6pavHv0yt89fuXTSbPpZLLp/aRDDUNECWvNrhw9qBKLi0aIjYBMCf1ZkOsGKNhnYrQt3Ozk2Ws/efbGPzx/a5ePHkhwqF3576FfPrqPH/26AjHvGS3gxazw5w1w4xXNDlBgCqUQDNuzJUDlGxu3eWrA3N4DTmRXCG9a4bMTl6dTOow0V1NmUpr+GeN3yNhJMVGMPaoYFtsqYVj8ZGAI73kFyMw7m2asZ4XPQphxt0TTxHlLvXslUFZcuBpgoQGpLb5UIbs2n2Q3AUSlUghwI3R1kJQwKg1Ah6KUFKNeCkwLg51d9/EsLsByiWzWX4Ll0gB8g4wbyxq9kKxDAJBBdUCIDXy1Kw9un0coYmCNpyim0gD8GTPAI4VJ3dLKMKAoCFWNGcmvfFkkiHevHMh4SnyGZCkFRZ8CdxiV8UqWc/AhdDmWUwiRUz5jSQfEZ0iWMlD0KXDrZsinEKL0vumH2MzxxxyFUaMDcUhTjh4CmgabO15BBqeZrmak5f3WJxrJhU0v7ocesmngaX8BAAD//xvxcCsAAAAGSURBVAMA+w82U5cnLM4AAAAASUVORK5CYIIA" },
+  { key: 'c_orador', name: 'EL ORADOR', color: 0x00e0ff, sash: 0xffe34d, hair: 0x222222, data: charImage("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAEPUlEQVR4AZRUS44URxCNaEv2BoxkH8Nr2zu8xbKXcA1vjMYrjGguAOIAsAHOATsYwQ6OwUcwSAhRyXsvIqoyq7sHJifj9+JFZFRW12zsTMvPxD5MXvqccYBmplopG9fpWGRDm6FPFq8GKEJm9xhnbahVlokV1B20L0v2aoBDtBwMRoxFxYWwUwk44dKhRBRaheGmXg2Q6I7JwjR9mtBwDAER6FAUSLkPTGHfOEBX2LnqcED5zt24tTYOZOAcGMBtXF1huehXHEFdCd3Wvf!giSXXcbBJzA4MsJCNy6l6AdBwn90QPA+oSKtqYaMiI+TAACOdzYnUAfyMpuMbbXqytenptk3HW3YrGqmnisjJwACel5GIp91j+kJ+iaTiHjCPY5CbmSaK4jQ2drf1wgCrt5VtBuLcLFA+NWkff!nHNr9et0+w3!1+DUkSmYGbBt6pezMPyNqe2sdds3MXf2oXrt4S84cXd+zz8da+f3nbPj!dAisiirEBYCc2x4CwPQ!e8MU5AFqaxHGtiJSAzc3DBUH9ePW2Nb4Hww02x038D9Ry4VDsDMIw1vuqkIDFVxBuJAY9J9zO48lZH5Brzgv!3tLBm9+u+VA3Rl2qoQ5JbDjCN9IECmlCpATLw1PSIkcMhs9thonO!!EzQyNutYgQoCTmjgC4OsHq8pCLAQDEnQPRBhmWMD09PeJ5I0Ec!9pQ1oxDAIq0EnAB1CGIMLANQyJtXDEAvUEqjf4DjoBPAmPVLg88d5E3gWAp1aFWC!+GKwVWofEbmKOvOGxAqbHoNw7SzDgXb8r67oZVMSw2gKo2UeMGkMG2fq1j5og5nsRQqncJwPM57!11ye7+fcl2FoYTBosN11ENg42PJ28AmSbYAcduYUIvcMQ41MGPQ!!UwTN!djy5a6PRAwQ3bkAhIjSWm6pavHv0yt89fuXTSbPpZLLp!aRDDUNECWvNrhw9qBKLi0aIjYBMCf1ZkOsGKNhnYrQt3Ozk2Ws!efbGPzx!a5ePHkhwqF3576FfPrqPH!26AjHvGS3gxazw5w1w4xXNDlBgCqUQDNuzJUDlGxu3eWrA3N4DTmRXCG9a4bMTl6dTOow0V1NmUpr+GeN3yNhJMVGMPaoYFtsqYVj8ZGAI73kFyMw7m2asZ4XPQphxt0TTxHlLvXslUFZcuBpgoQGpLb5UIbs2n2Q3AUSlUghwI3R1kJQwKg1Ah6KUFKNeCkwLg51d9!EsLsByiWzWX4Ll0gB8g4wbyxq9kKxDAJBBdUCIDXy1Kw9un0coYmCNpyim0gD8GTPAI4VJ3dLKMKAoCFWNGcmvfFkkiHevHMh4SnyGZCkFRZ8CdxiV8UqWc!AhdDmWUwiRUz5jSQfEZ0iWMlD0KXDrZsinEKL0vumH2MzxxxyFUaMDcUhTjh4CmgabO15BBqeZrmak5f3WJxrJhU0v7ocesmngaX8BAAD!!xvxcCsAAAAGSURBVAMA+w82U5cnLM4AAAAASUVORK5CYIIA") },
   { key: 'c_populista', name: 'LA POPULISTA', color: 0xff5da2, sash: 0x8cff5d, hair: 0x3a1d1d, data: null },
   { key: 'c_tecnocrata', name: 'EL TECNICO', color: 0x9b8cff, sash: 0xffffff, hair: 0x111111, data: null },
   { key: 'c_outsider', name: 'EL OUTSIDER', color: 0x5dff9b, sash: 0xff5d5d, hair: 0x553311, data: null },
@@ -142,6 +145,7 @@ function create() {
   const scene = this;
 
   ensureCharacterTextures(scene);
+  ensureMenuBackground(scene);
 
   scene.state = {
     phase: 'start',
@@ -259,6 +263,79 @@ function drawCharacterTexture(scene, c) {
   g.generateTexture(c.key, CHAR_W, CHAR_H);
   g.destroy();
   scene.textures.get(c.key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+}
+
+// Fondo pixel-art del menú: atardecer en bandas, luna, estrellas,
+// plataformas flotantes (el "ascenso") y un muro fronterizo (la "deportación").
+function ensureMenuBackground(scene) {
+  if (scene.textures.exists('menu_bg')) return;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  const horizon = 430;
+
+  // cielo en bandas (degradado retro de atardecer)
+  const bands = [
+    0x0a0a2a, 0x141452, 0x2a1a6b, 0x4a2080, 0x7a2a8a,
+    0xb83a7a, 0xe85a5a, 0xff8a4a, 0xffb86a,
+  ];
+  const bh = horizon / bands.length;
+  for (let i = 0; i < bands.length; i++) {
+    g.fillStyle(bands[i], 1);
+    g.fillRect(0, Math.floor(i * bh), W, Math.ceil(bh) + 1);
+  }
+
+  // luna
+  g.fillStyle(0xffe9a8, 1);
+  g.fillCircle(640, 110, 60);
+  g.fillStyle(0xf0d488, 1);
+  g.fillCircle(662, 96, 12);
+  g.fillCircle(618, 132, 9);
+  g.fillCircle(652, 142, 7);
+
+  // estrellas (pixeladas)
+  g.fillStyle(0xffffff, 1);
+  for (let i = 0; i < 80; i++) {
+    const x = Phaser.Math.Between(0, W);
+    const y = Phaser.Math.Between(0, 270);
+    const s = Phaser.Math.Between(1, 3);
+    g.fillRect(x, y, s, s);
+  }
+
+  // plataformas flotantes (insinúan el juego = ascenso)
+  const plats = [[110, 360], [300, 300], [520, 345], [200, 215], [600, 245], [410, 150], [80, 250]];
+  for (const p of plats) {
+    g.fillStyle(0x16264f, 1);
+    g.fillRoundedRect(p[0], p[1], 72, 13, 3);
+    g.fillStyle(0x2a3f7a, 1);
+    g.fillRect(p[0] + 2, p[1] + 1, 68, 3);
+  }
+
+  // suelo / base del muro
+  g.fillStyle(0x241026, 1);
+  g.fillRect(0, horizon, W, H - horizon);
+
+  // muro fronterizo (ladrillos) = la "deportación"
+  const bw = 46;
+  const bhh = 24;
+  let row = 0;
+  for (let y = horizon; y < H; y += bhh, row++) {
+    for (let x = -(row % 2) * (bw / 2); x < W; x += bw) {
+      g.fillStyle(0x6b2f2f, 1);
+      g.fillRect(x + 2, y + 2, bw - 4, bhh - 4);
+      g.fillStyle(0x7e3a3a, 1);
+      g.fillRect(x + 2, y + 2, bw - 4, 3);
+    }
+  }
+
+  // alambre/borde superior del muro
+  g.lineStyle(3, 0x3a1a3a, 1);
+  g.beginPath();
+  g.moveTo(0, horizon);
+  g.lineTo(W, horizon);
+  g.strokePath();
+
+  g.generateTexture('menu_bg', W, H);
+  g.destroy();
+  scene.textures.get('menu_bg').setFilter(Phaser.Textures.FilterMode.NEAREST);
 }
 
 // =====================================================================
@@ -890,19 +967,30 @@ function createStartScreen(scene) {
   scene.startScreen = {};
   const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
 
-  c.add(scene.add.rectangle(W / 2, H / 2, W, H, COLORS.panel, 0.92));
-  c.add(scene.add.text(W / 2, 80, 'SKY JUMP', {
-    fontFamily: 'monospace', fontSize: '56px', color: '#e1ff00', fontStyle: 'bold',
+  c.add(scene.add.image(W / 2, H / 2, 'menu_bg'));
+  c.add(scene.add.rectangle(W / 2, H / 2, W, H, 0x0a0a2a, 0.3));
+
+  // título temático: ASCENSO (arriba/verde) o DEPORTACIÓN (abajo/rojo)
+  c.add(scene.add.rectangle(W / 2, 92, 540, 116, 0x0a0a2a, 0.55).setStrokeStyle(3, 0xffb86a, 0.85));
+  c.add(scene.add.text(W / 2, 62, 'ASCENSO', {
+    fontFamily: 'monospace', fontSize: '46px', color: '#8cff5d', fontStyle: 'bold',
   }).setOrigin(0.5));
-  c.add(scene.add.text(W / 2, 128, 'CAMPAÑA AL CIELO', {
-    fontFamily: 'monospace', fontSize: '20px', color: '#ff5da2', fontStyle: 'bold',
+  c.add(scene.add.text(W / 2, 96, 'o', {
+    fontFamily: 'monospace', fontSize: '18px', color: '#f7ffd8',
   }).setOrigin(0.5));
-  c.add(scene.add.text(W / 2, 178,
-    'Sube saltando de plataforma en plataforma lo más alto posible.\n' +
+  c.add(scene.add.text(W / 2, 128, 'DEPORTACIÓN', {
+    fontFamily: 'monospace', fontSize: '40px', color: '#ff5d5d', fontStyle: 'bold',
+  }).setOrigin(0.5));
+
+  // panel de contenido para legibilidad sobre el fondo
+  c.add(scene.add.rectangle(W / 2, 342, 600, 384, 0x0a0a2a, 0.5).setStrokeStyle(2, 0x2b3566, 0.8));
+
+  c.add(scene.add.text(W / 2, 185,
+    'Salta de plataforma en plataforma y sube lo más alto posible.\n' +
     'Joystick: moverte  ·  ARRIBA: saltar  ·  BOTON 1: doble impulso\n' +
-    'Esquiva torretas y drones. 3 vidas.\n' +
-    '2 jugadores: pantalla dividida, ¡gana quien suba más alto!', {
-    fontFamily: 'monospace', fontSize: '13px', color: '#b9c2e0', align: 'center',
+    'Esquiva torretas y drones. Si caes, ¡te DEPORTAN! (pierdes vida)\n' +
+    '2 jugadores: pantalla dividida, gana quien más alto llegue.', {
+    fontFamily: 'monospace', fontSize: '13px', color: '#dfe6ff', align: 'center',
   }).setOrigin(0.5));
 
   const mkBtn = (y, label) =>
@@ -973,7 +1061,8 @@ function createSelectScreen(scene) {
   scene.selectScreen = {};
   const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
 
-  c.add(scene.add.rectangle(W / 2, H / 2, W, H, COLORS.panel, 0.94));
+  c.add(scene.add.image(W / 2, H / 2, 'menu_bg'));
+  c.add(scene.add.rectangle(W / 2, H / 2, W, H, 0x0a0a2a, 0.62));
   c.add(scene.add.text(W / 2, 60, 'ELIGE TU CANDIDATO', {
     fontFamily: 'monospace', fontSize: '30px', color: '#e1ff00', fontStyle: 'bold',
   }).setOrigin(0.5));
@@ -1085,7 +1174,8 @@ function createResultsScreen(scene) {
   scene.resultsScreen = {};
   const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
 
-  c.add(scene.add.rectangle(W / 2, H / 2, W, H, COLORS.panel, 0.94));
+  c.add(scene.add.image(W / 2, H / 2, 'menu_bg'));
+  c.add(scene.add.rectangle(W / 2, H / 2, W, H, 0x0a0a2a, 0.62));
   c.add(scene.add.text(W / 2, 64, 'FIN DE LA CAMPAÑA', {
     fontFamily: 'monospace', fontSize: '32px', color: '#e1ff00', fontStyle: 'bold',
   }).setOrigin(0.5));
