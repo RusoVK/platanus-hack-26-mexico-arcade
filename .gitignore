@@ -6,3 +6,6 @@ yarn.lock
 *.log
 .env
 .env.local
+convert.js
+base64-assets.json
+assets/
