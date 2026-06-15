@@ -1,40 +1,79 @@
-// Platanus Hack 26 — CDMX Edition
-// Two-player brick duel. Dash with Button 1, break the word, keep your paddle alive.
+// Platanus Hack 26 — Equipo Ducks
+// SKY JUMP: CAMPAÑA AL CIELO
+// Plataformero vertical infinito (tipo Doodle Jump) con sátira "presidente en campaña".
+// - 1 jugador: pantalla completa.
+// - 2 jugadores: PANTALLA DIVIDIDA, escenarios independientes, se compite por altura/score.
+// Personajes seleccionables (listos para pixel art vía base64, ver CHARACTERS).
 
-const GAME_WIDTH = 800;
-const GAME_HEIGHT = 600;
-const STORAGE_KEY = 'platanus-hack-26-standard-highscores';
-const MAX_HIGH_SCORES = 5;
-const WINNING_NAME_LENGTH = 3;
+const W = 800;
+const H = 600;
+const SPLIT_W = 400;   // ancho de cada mitad en 2 jugadores
+const FULL_W = 800;    // ancho de campo en 1 jugador
+const FIELD2_OFFSET = 4000; // separación en coordenadas de mundo entre los dos campos
+
+const STORAGE_KEY = 'ducks-sky-jump-highscores';
+const MAX_SCORES = 5;
+
+// ---- Tuning de física (px / s) ----
+const GRAVITY = 1900;
+const MOVE_SPEED = 380;
+const JUMP_V = 940;
+const SPRING_V = 1560;
+const IMPULSE_V = 820;
+const IMPULSE_CD = 1400;
+const MAX_FALL = 1500;
+
+const PLAT_W = 106;
+const PLAT_H = 18;
+const P_HALF_W = 18;
+const P_HALF_H = 28;
+
+const START_Y = 500;
+const ANCHOR_FROM_TOP = 0.56;
+const INVULN_MS = 1000;
+const FALL_GRACE_MS = 3000;
+const START_LIVES = 3;
+const POOL = 14;
+const HAZARDS = 5;
 
 const COLORS = {
-  background: 0x0b0f03,
-  frame: 0x3a3a0a,
-  accent: 0xe1ff00,
-  accentSoft: 0xa8c700,
-  p1: 0xe1ff00,
-  p2: 0xff6ec7,
-  red: 0xff7a7a,
+  sky: 0x0a1130,
+  panel: 0x0c1024,
+  skin: 0xf0c89a,
+  platNormal: 0x6b7f14,
+  platMove: 0x3a86ff,
+  platSpring: 0x2ecc71,
+  platBreak: 0xb5651d,
+  turret: 0x2b2f3a,
+  turretLight: 0xff4d4d,
   white: 0xf7ffd8,
-  slate: 0xb8c48d,
-  cell: 0x1a1e05,
-  overlay: 0x0c0e02,
-  backdrop: 0x030504,
-  fieldBg: 0x0a0d0b,
-  brickA: 0x3f4a0e,
-  brickB: 0x6b7f14,
-  brickC: 0xa8c700,
-  brickD: 0xe1ff00,
+  accent: 0xe1ff00,
+  star: 0xffffff,
+  divider: 0x2b3566,
 };
 
-const LETTER_GRID = [
-  ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
-  ['H', 'I', 'J', 'K', 'L', 'M', 'N'],
-  ['O', 'P', 'Q', 'R', 'S', 'T', 'U'],
-  ['V', 'W', 'X', 'Y', 'Z', '.', '-'],
-  ['DEL', 'END'],
+// =====================================================================
+// PERSONAJES
+// ---------------------------------------------------------------------
+// Para usar el PIXEL ART de tu compañero:
+//   1. Convierte cada PNG a base64 (data URI). Ej. en la terminal:
+//        base64 -w0 personaje.png    (o una web "png to base64")
+//   2. Pega el resultado en el campo `data` con el prefijo data:image/png;base64,
+//        { key: 'c_orador', name: 'EL ORADOR', data: 'data:image/png;base64,iVBORw0...' }
+//   3. Si un personaje tiene `data`, se carga ese PNG; si no, se dibuja uno
+//      procedural de respaldo con `color`/`sash`/`hair`.
+//   (Recomendado: sprites ~44x62 px o múltiplos; se escalan a esa altura.)
+// =====================================================================
+const CHARACTERS = [
+  { key: 'c_orador', name: 'EL ORADOR', color: 0x00e0ff, sash: 0xffe34d, hair: 0x222222, data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAEPUlEQVR4AZRUS44URxCNaEv2BoxkH8Nr2zu8xbKXcA1vjMYrjGguAOIAsAHOATsYwQ6OwUcwSAhRyXsvIqoyq7sHJifj9+JFZFRW12zsTMvPxD5MXvqccYBmplopG9fpWGRDm6FPFq8GKEJm9xhnbahVlokV1B20L0v2aoBDtBwMRoxFxYWwUwk44dKhRBRaheGmXg2Q6I7JwjR9mtBwDAER6FAUSLkPTGHfOEBX2LnqcED5zt24tTYOZOAcGMBtXF1huehXHEFdCd3Wvf/giSXXcbBJzA4MsJCNy6l6AdBwn90QPA+oSKtqYaMiI+TAACOdzYnUAfyMpuMbbXqytenptk3HW3YrGqmnisjJwACel5GIp91j+kJ+iaTiHjCPY5CbmSaK4jQ2drf1wgCrt5VtBuLcLFA+NWkff/nHNr9et0+w3/1+DUkSmYGbBt6pezMPyNqe2sdds3MXf2oXrt4S84cXd+zz8da+f3nbPj/dAisiirEBYCc2x4CwPQ/e8MU5AFqaxHGtiJSAzc3DBUH9ePW2Nb4Hww02x038D9Ry4VDsDMIw1vuqkIDFVxBuJAY9J9zO48lZH5Brzgv/3tLBm9+u+VA3Rl2qoQ5JbDjCN9IECmlCpATLw1PSIkcMhs9thonO//EzQyNutYgQoCTmjgC4OsHq8pCLAQDEnQPRBhmWMD09PeJ5I0Ec/9pQ1oxDAIq0EnAB1CGIMLANQyJtXDEAvUEqjf4DjoBPAmPVLg88d5E3gWAp1aFWC/+GKwVWofEbmKOvOGxAqbHoNw7SzDgXb8r67oZVMSw2gKo2UeMGkMG2fq1j5og5nsRQqncJwPM57/11ye7+fcl2FoYTBosN11ENg42PJ28AmSbYAcduYUIvcMQ41MGPQ//UwTN/djy5a6PRAwQ3bkAhIjSWm6pavHv0yt89fuXTSbPpZLLp/aRDDUNECWvNrhw9qBKLi0aIjYBMCf1ZkOsGKNhnYrQt3Ozk2Ws/efbGPzx/a5ePHkhwqF3576FfPrqPH/26AjHvGS3gxazw5w1w4xXNDlBgCqUQDNuzJUDlGxu3eWrA3N4DTmRXCG9a4bMTl6dTOow0V1NmUpr+GeN3yNhJMVGMPaoYFtsqYVj8ZGAI73kFyMw7m2asZ4XPQphxt0TTxHlLvXslUFZcuBpgoQGpLb5UIbs2n2Q3AUSlUghwI3R1kJQwKg1Ah6KUFKNeCkwLg51d9/EsLsByiWzWX4Ll0gB8g4wbyxq9kKxDAJBBdUCIDXy1Kw9un0coYmCNpyim0gD8GTPAI4VJ3dLKMKAoCFWNGcmvfFkkiHevHMh4SnyGZCkFRZ8CdxiV8UqWc/AhdDmWUwiRUz5jSQfEZ0iWMlD0KXDrZsinEKL0vumH2MzxxxyFUaMDcUhTjh4CmgabO15BBqeZrmak5f3WJxrJhU0v7ocesmngaX8BAAD//xvxcCsAAAAGSURBVAMA+w82U5cnLM4AAAAASUVORK5CYIIA" },
+  { key: 'c_populista', name: 'LA POPULISTA', color: 0xff5da2, sash: 0x8cff5d, hair: 0x3a1d1d, data: null },
+  { key: 'c_tecnocrata', name: 'EL TECNICO', color: 0x9b8cff, sash: 0xffffff, hair: 0x111111, data: null },
+  { key: 'c_outsider', name: 'EL OUTSIDER', color: 0x5dff9b, sash: 0xff5d5d, hair: 0x553311, data: null },
 ];
+const CHAR_W = 46;
+const CHAR_H = 66;
 
+// Arcade cabinet button → keyboard key mapping.
 // DO NOT replace existing keys — they match the physical arcade cabinet wiring.
 // To add local testing shortcuts, append extra keys to any array.
 const CABINET_KEYS = {
@@ -71,1484 +110,1198 @@ for (const [arcadeCode, keys] of Object.entries(CABINET_KEYS)) {
 
 const config = {
   type: Phaser.AUTO,
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
+  width: W,
+  height: H,
   parent: 'game-root',
-  backgroundColor: '#0b0f03',
-  physics: {
-    default: 'arcade',
-    arcade: {
-      gravity: { y: 0 },
-      debug: false,
-    },
-  },
+  backgroundColor: '#0a1130',
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: GAME_WIDTH,
-    height: GAME_HEIGHT,
+    width: W,
+    height: H,
   },
-  scene: {
-    preload,
-    create,
-    update,
-  },
+  scene: { preload, create, update },
 };
 
 new Phaser.Game(config);
 
-function preload() {}
+// =====================================================================
+// Lifecycle
+// =====================================================================
+
+function preload() {
+  // Carga de pixel art (base64) para los personajes que lo tengan.
+  for (const c of CHARACTERS) {
+    if (c.data) {
+      this.load.image(c.key, c.data);
+    }
+  }
+}
 
 function create() {
   const scene = this;
 
+  ensureCharacterTextures(scene);
+
   scene.state = {
-    phase: 'loading',
-    scores: { p1: 0, p2: 0 },
-    remainingBricks: 0,
+    phase: 'start',
+    twoPlayers: true,
     highScores: [],
-    winner: null,
-    winnerLabel: '',
-    saveStatus: 'Loading scores...',
-    menu: { cursor: 0, cooldown: 0, lastAxis: 0 },
-    dash: {
-      p1: { activeUntil: 0, cooldownUntil: 0, dir: 0 },
-      p2: { activeUntil: 0, cooldownUntil: 0, dir: 0 },
-    },
-    nameEntry: {
-      letters: [],
-      row: 0,
-      col: 0,
-      moveCooldownUntil: 0,
-      confirmCooldownUntil: 0,
-      lastMoveVector: { x: 0, y: 0 },
-    },
+    nav: 0,
+    sel: null,
   };
 
-  scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.background);
-  scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 760, 560, 0x141a04, 0.94).setStrokeStyle(4, COLORS.frame, 0.8);
+  // segunda cámara para split-screen (oculta hasta jugar a 2P)
+  scene.cam2 = scene.cameras.add(SPLIT_W, 0, SPLIT_W, H);
+  scene.cam2.setVisible(false);
+  scene.cam2.setBackgroundColor(COLORS.sky);
+  scene.cameras.main.setBackgroundColor(COLORS.sky);
 
-  createBackground(scene);
+  // dos campos independientes
+  scene.fields = [
+    buildField(scene, 0, 0, scene.cameras.main),
+    buildField(scene, 1, FIELD2_OFFSET, scene.cam2),
+  ];
+
+  scene.players = [makePlayer(scene, 0), makePlayer(scene, 1)];
+  scene.fields[0].player = scene.players[0];
+  scene.fields[1].player = scene.players[1];
+
   createHud(scene);
-  createPlayfield(scene);
-  createEndGameUi(scene);
   createStartScreen(scene);
-  createLeaderboardScreen(scene);
-  createControlsScreen(scene);
-  createPauseScreen(scene);
+  createSelectScreen(scene);
+  createResultsScreen(scene);
   createControls(scene);
+
+  // Reparto de cámaras: cada cámara solo ve lo suyo.
+  scene.cam2.ignore([
+    scene.fields[0].layer, scene.hud.p1.container,
+    scene.startScreen.container, scene.selectScreen.container, scene.resultsScreen.container,
+  ]);
+  scene.cameras.main.ignore([scene.fields[1].layer, scene.hud.p2.container]);
+
   showStartScreen(scene);
 
   loadHighScores()
-    .then((highScores) => {
-      scene.state.highScores = highScores;
-      scene.state.saveStatus = 'Finish a duel to save a score.';
-      refreshLeaderboard(scene);
-      refreshStartScreenLeaderboard(scene);
-    })
-    .catch(() => {
-      scene.state.highScores = [];
-      scene.state.saveStatus = 'Storage unavailable. Match runs without saves.';
-      refreshLeaderboard(scene);
-      refreshStartScreenLeaderboard(scene);
-    });
+    .then((scores) => { scene.state.highScores = scores; refreshLeaderboards(scene); })
+    .catch(() => { scene.state.highScores = []; refreshLeaderboards(scene); });
 }
 
 function update(time, delta) {
   const scene = this;
-  if (!scene.state) {
-    return;
-  }
+  if (!scene.state) return;
 
+  const dt = Math.min(delta, 40) / 1000;
   const phase = scene.state.phase;
 
   if (phase === 'start') {
-    handleStartMenu(scene, time);
-    return;
-  }
-
-  if (phase === 'leaderboard') {
-    if (consumeAnyPressedControl(scene, ['START1', 'START2', 'P1_1', 'P2_1', 'P1_2', 'P2_2'])) {
-      scene.leaderScreen.container.setVisible(false);
-      showStartScreen(scene);
-    }
-    return;
-  }
-
-  if (phase === 'controls') {
-    if (consumeAnyPressedControl(scene, ['START1', 'START2', 'P1_1', 'P2_1', 'P1_2', 'P2_2'])) {
-      scene.controlsScreen.container.setVisible(false);
-      showStartScreen(scene);
-    }
-    return;
-  }
-
-  if (phase === 'playing') {
-    updatePaddles(scene, delta, time);
-    updateBallGhostStates(scene);
-    updateBallTrails(scene, time);
-    checkBallEscape(scene);
-    if (consumeAnyPressedControl(scene, ['START1', 'START2'])) {
-      pauseMatch(scene);
-    }
-    return;
-  }
-
-  if (phase === 'paused') {
-    if (consumeAnyPressedControl(scene, ['START1', 'START2'])) {
-      resumeMatch(scene);
-    }
-    return;
-  }
-
-  if (phase === 'gameover') {
-    handleNameEntry(scene, time);
-    return;
-  }
-
-  if (phase === 'saved') {
-    if (consumeAnyPressedControl(scene, ['START1', 'START2', 'P1_1', 'P2_1', 'P1_2', 'P2_2'])) {
+    handleStartMenu(scene);
+  } else if (phase === 'select') {
+    handleSelect(scene, time);
+  } else if (phase === 'playing') {
+    updatePlaying(scene, dt, time);
+  } else if (phase === 'results') {
+    handleResults(scene, time);
+  } else if (phase === 'saved') {
+    if (consumeAnyPressedControl(scene, ['START1', 'START2', 'P1_1', 'P2_1'])) {
       returnToStart(scene);
     }
   }
 }
 
-function createBackground(scene) {
-  scene.add.rectangle(
-    GAME_WIDTH / 2,
-    GAME_HEIGHT / 2,
-    700,
-    450,
-    COLORS.fieldBg,
-    0.18,
-  );
-}
+// =====================================================================
+// Texturas de personajes (procedural de respaldo)
+// =====================================================================
 
-function createHud(scene) {
-  scene.hud = {};
-
-  scene.hud.title = scene.add
-    .text(GAME_WIDTH / 2, 20, 'PLATANUS HACK 26 BRICKS', {
-      fontFamily: 'monospace',
-      fontSize: '22px',
-      color: '#f7fbff',
-      fontStyle: 'bold',
-      align: 'center',
-    })
-    .setOrigin(0.5, 0);
-
-  scene.hud.subtitle = scene.add
-    .text(
-      GAME_WIDTH / 2,
-      48,
-      '',
-      {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        color: '#a8ad8a',
-        align: 'center',
-      },
-    )
-    .setOrigin(0.5, 0);
-
-  scene.hud.p1Score = scene.add
-    .text(65, 72, 'P1 00', {
-      fontFamily: 'monospace',
-      fontSize: '28px',
-      color: '#e1ff00',
-      fontStyle: 'bold',
-    })
-    .setOrigin(0, 0.5);
-
-  scene.hud.p2Score = scene.add
-    .text(GAME_WIDTH - 65, 72, 'P2 00', {
-      fontFamily: 'monospace',
-      fontSize: '28px',
-      color: '#ff6ec7',
-      fontStyle: 'bold',
-    })
-    .setOrigin(1, 0.5);
-
-  scene.hud.remaining = scene.add
-    .text(GAME_WIDTH / 2, 72, 'BRICKS 000', {
-      fontFamily: 'monospace',
-      fontSize: '18px',
-      color: '#ffd84d',
-      fontStyle: 'bold',
-    })
-    .setOrigin(0.5);
-
-  scene.hud.status = scene.add
-    .text(GAME_WIDTH / 2, GAME_HEIGHT - 24, '', {
-      fontFamily: 'monospace',
-      fontSize: '14px',
-      color: '#f7fbff',
-      align: 'center',
-    })
-    .setOrigin(0.5);
-
-  scene.hud.scoreColors = {
-    p1: '#e1ff00',
-    p2: '#ff6ec7',
-    penalty: '#ff7a7a',
-  };
-}
-
-function createPlayfield(scene) {
-  scene.playfield = {};
-  const paddleWidth = 112;
-  const paddleHeight = 10;
-  const topBounceLineY = 118;
-  const bottomBounceLineY = GAME_HEIGHT - 72;
-  const wallThickness = 8;
-  const wallGap = 22;
-  const topPaddleY = topBounceLineY - paddleHeight / 2;
-  const bottomPaddleY = bottomBounceLineY + paddleHeight / 2;
-  const topWallY = topBounceLineY - wallGap - wallThickness / 2;
-  const bottomWallY = bottomBounceLineY + wallGap + wallThickness / 2;
-
-  // Walls span full width/height so corners are sealed — balls cannot escape through gaps.
-  scene.playfield.leftWall = scene.add.rectangle(38, GAME_HEIGHT / 2, 14, GAME_HEIGHT, COLORS.frame, 0);
-  scene.playfield.rightWall = scene.add.rectangle(GAME_WIDTH - 38, GAME_HEIGHT / 2, 14, GAME_HEIGHT, COLORS.frame, 0);
-  scene.playfield.topWall = scene.add.rectangle(
-    GAME_WIDTH / 2,
-    topWallY,
-    GAME_WIDTH,
-    wallThickness,
-    COLORS.frame,
-    0,
-  );
-  scene.playfield.bottomWall = scene.add.rectangle(
-    GAME_WIDTH / 2,
-    bottomWallY,
-    GAME_WIDTH,
-    wallThickness,
-    COLORS.frame,
-    0,
-  );
-
-  scene.physics.add.existing(scene.playfield.leftWall, true);
-  scene.physics.add.existing(scene.playfield.rightWall, true);
-  scene.physics.add.existing(scene.playfield.topWall, true);
-  scene.physics.add.existing(scene.playfield.bottomWall, true);
-
-  scene.add.rectangle(
-    GAME_WIDTH / 2,
-    topBounceLineY,
-    700,
-    1,
-    COLORS.frame,
-    0.55,
-  );
-  scene.add.rectangle(
-    GAME_WIDTH / 2,
-    bottomBounceLineY,
-    700,
-    1,
-    COLORS.frame,
-    0.55,
-  );
-
-  scene.playfield.p1Paddle = scene.add.rectangle(
-    GAME_WIDTH / 2,
-    topPaddleY,
-    paddleWidth,
-    paddleHeight,
-    COLORS.p1,
-    1,
-  );
-  scene.playfield.p2Paddle = scene.add.rectangle(
-    GAME_WIDTH / 2,
-    bottomPaddleY,
-    paddleWidth,
-    paddleHeight,
-    COLORS.p2,
-    1,
-  );
-
-  scene.physics.add.existing(scene.playfield.p1Paddle);
-  scene.physics.add.existing(scene.playfield.p2Paddle);
-
-  configurePaddleBody(scene.playfield.p1Paddle.body);
-  configurePaddleBody(scene.playfield.p2Paddle.body);
-
-  scene.playfield.balls = [
-    createBall(scene, GAME_WIDTH / 2 - 120, 170, COLORS.white, 'p1'),
-    createBall(scene, GAME_WIDTH / 2 + 120, GAME_HEIGHT - 170, COLORS.white, 'p2'),
-  ];
-
-  scene.playfield.bricks = scene.physics.add.staticGroup();
-  scene.playfield.ballTrails = scene.add.group();
-
-  for (const ball of scene.playfield.balls) {
-    scene.physics.add.collider(ball, scene.playfield.leftWall);
-    scene.physics.add.collider(ball, scene.playfield.rightWall);
-    scene.physics.add.collider(ball, scene.playfield.topWall);
-    scene.physics.add.collider(ball, scene.playfield.bottomWall);
-    scene.physics.add.collider(
-      ball,
-      scene.playfield.p1Paddle,
-      () => handleBallPaddleCollision(scene, ball, scene.playfield.p1Paddle, 'p1'),
-      () => canBallCollideWithPaddle(ball, 'p1'),
-      scene,
-    );
-    scene.physics.add.collider(
-      ball,
-      scene.playfield.p2Paddle,
-      () => handleBallPaddleCollision(scene, ball, scene.playfield.p2Paddle, 'p2'),
-      () => canBallCollideWithPaddle(ball, 'p2'),
-      scene,
-    );
-    scene.physics.add.collider(
-      ball,
-      scene.playfield.bricks,
-      (_, brick) => handleBallBrickCollision(scene, ball, brick),
-      undefined,
-      scene,
-    );
+function ensureCharacterTextures(scene) {
+  for (const c of CHARACTERS) {
+    if (scene.textures.exists(c.key)) {
+      scene.textures.get(c.key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+      continue;
+    }
+    drawCharacterTexture(scene, c);
   }
 }
 
-function createEndGameUi(scene) {
-  scene.endGame = {};
+function drawCharacterTexture(scene, c) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  // piernas
+  g.fillStyle(0x22243a, 1);
+  g.fillRect(12, 58, 8, 8);
+  g.fillRect(26, 58, 8, 8);
+  // cuerpo (traje)
+  g.fillStyle(c.color, 1);
+  g.fillRoundedRect(5, 28, 36, 32, 5);
+  // corbata
+  g.fillStyle(0xffffff, 0.9);
+  g.fillTriangle(23, 30, 19, 40, 27, 40);
+  // banda presidencial (diagonal)
+  g.lineStyle(8, c.sash, 1);
+  g.beginPath();
+  g.moveTo(8, 54);
+  g.lineTo(40, 30);
+  g.strokePath();
+  // cabeza
+  g.fillStyle(COLORS.skin, 1);
+  g.fillCircle(23, 18, 12);
+  // pelo
+  g.fillStyle(c.hair, 1);
+  g.fillRect(11, 4, 24, 9);
+  // ojos
+  g.fillStyle(0x111111, 1);
+  g.fillCircle(19, 18, 2);
+  g.fillCircle(27, 18, 2);
+  // micrófono
+  g.fillStyle(0x333333, 1);
+  g.fillRect(40, 20, 3, 16);
+  g.fillStyle(0x999999, 1);
+  g.fillCircle(41, 16, 5);
+  g.generateTexture(c.key, CHAR_W, CHAR_H);
+  g.destroy();
+  scene.textures.get(c.key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+}
 
-  scene.endGame.container = scene.add.container(0, 0);
-  scene.endGame.container.setDepth(20);
-  scene.endGame.container.setVisible(false);
+// =====================================================================
+// Campo (cada jugador tiene el suyo): plataformas + drones + estrellas
+// =====================================================================
 
-  const backdrop = scene.add.rectangle(
-    GAME_WIDTH / 2,
-    GAME_HEIGHT / 2,
-    GAME_WIDTH,
-    GAME_HEIGHT,
-    COLORS.backdrop,
-    0.98,
-  );
-  scene.endGame.container.add(backdrop);
+function buildField(scene, index, originX, camera) {
+  const layer = scene.add.container(0, 0);
 
-  scene.endGame.title = scene.add
-    .text(GAME_WIDTH / 2, 88, 'GAME OVER', {
-      fontFamily: 'monospace',
-      fontSize: '30px',
-      color: '#f7ffd8',
-      fontStyle: 'bold',
-    })
-    .setOrigin(0.5);
+  const stars = [];
+  for (let i = 0; i < 16; i++) {
+    const s = scene.add.circle(
+      originX + Phaser.Math.Between(0, SPLIT_W),
+      Phaser.Math.Between(0, H),
+      Phaser.Math.Between(1, 2),
+      COLORS.star,
+      Phaser.Math.FloatBetween(0.3, 0.85),
+    );
+    layer.add(s);
+    stars.push(s);
+  }
 
-  scene.endGame.summary = scene.add
-    .text(GAME_WIDTH / 2, 126, '', {
-      fontFamily: 'monospace',
-      fontSize: '22px',
-      color: '#e1ff00',
-      align: 'center',
-    })
-    .setOrigin(0.5);
+  const platforms = [];
+  for (let i = 0; i < POOL; i++) platforms.push(makePlatform(scene, layer));
 
-  scene.endGame.nameLabel = scene.add
-    .text(GAME_WIDTH / 2, 172, '', {
-      fontFamily: 'monospace',
-      fontSize: '13px',
-      color: '#a8ad8a',
-      align: 'center',
-    })
-    .setOrigin(0.5);
+  const hazards = [];
+  for (let i = 0; i < HAZARDS; i++) hazards.push(makeHazard(scene, layer));
 
-  scene.endGame.nameValue = scene.add
-    .text(GAME_WIDTH / 2, 208, '___', {
-      fontFamily: 'monospace',
-      fontSize: '36px',
-      color: '#ff6ec7',
-      fontStyle: 'bold',
-      align: 'center',
-      letterSpacing: 10,
-    })
-    .setOrigin(0.5);
+  return {
+    index, originX, camera, layer, stars, platforms, hazards,
+    width: SPLIT_W, player: null, highestY: 0, nextHazardAt: 0,
+    maxHeight: 0, active: false,
+  };
+}
 
-  scene.endGame.instructions = scene.add
-    .text(
-      GAME_WIDTH / 2,
-      242,
-      'MOVE  PICK',
-      {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        color: '#a8ad8a',
-        align: 'center',
-      },
-    )
-    .setOrigin(0.5);
+function makePlayer(scene, index) {
+  const field = scene.fields[index];
+  const sprite = scene.add.sprite(0, 0, CHARACTERS[index % CHARACTERS.length].key);
+  sprite.setDisplaySize(44, 62);
+  sprite.setDepth(10);
+  field.layer.add(sprite);
 
-  scene.endGame.leaderboardTitle = scene.add
-    .text(GAME_WIDTH / 2, 286, 'SCOREBOARD', {
-      fontFamily: 'monospace',
-      fontSize: '14px',
-      color: '#e1ff00',
-      fontStyle: 'bold',
-      align: 'center',
-    })
-    .setOrigin(0.5);
+  return {
+    index,
+    prefix: index === 0 ? 'P1' : 'P2',
+    sprite,
+    field,
+    charIndex: index % CHARACTERS.length,
+    x: 0, y: 0, vx: 0, vy: 0,
+    lives: START_LIVES,
+    alive: false,
+    grounded: false,
+    platform: null,
+    airImpulse: true,
+    impulseCdUntil: 0,
+    invulnUntil: 0,
+    fallGraceUntil: 0,
+    minY: START_Y,
+    height: 0,
+  };
+}
 
-  scene.endGame.gridLabels = [];
+function makePlatform(scene, layer) {
+  const base = scene.add.rectangle(0, 0, PLAT_W, PLAT_H, COLORS.platNormal);
+  base.setStrokeStyle(2, 0x05122a, 0.6);
+  const cap = scene.add.rectangle(0, -PLAT_H / 2 + 2, PLAT_W, 4, COLORS.white, 0.5);
 
-  for (let row = 0; row < LETTER_GRID.length; row += 1) {
-    const rowValues = LETTER_GRID[row];
-    const rowWidth = rowValues.length * 56;
-    for (let col = 0; col < rowValues.length; col += 1) {
-      const value = rowValues[col];
-      const cellX = GAME_WIDTH / 2 - rowWidth / 2 + 28 + col * 56;
-      const cellY = 430 + row * 28;
+  const spring = scene.add.rectangle(0, -PLAT_H / 2 - 6, 22, 10, COLORS.accent);
+  spring.setStrokeStyle(2, 0x05122a, 0.8);
+  spring.setVisible(false);
 
-      const cell = scene.add.rectangle(cellX, cellY, value.length > 1 ? 64 : 42, 24, COLORS.cell, 0.95);
-      cell.setStrokeStyle(2, COLORS.frame, 0.8);
+  const tBase = scene.add.rectangle(0, -2, 18, 14, COLORS.turret);
+  const tBarrel = scene.add.rectangle(-12, -4, 12, 5, COLORS.turret);
+  const tLight = scene.add.circle(0, -8, 3, COLORS.turretLight);
+  const turret = scene.add.container(PLAT_W / 2 - 12, -PLAT_H / 2 - 8, [tBase, tBarrel, tLight]);
+  turret.setVisible(false);
 
-      const label = scene.add
-        .text(cellX, cellY, value, {
-          fontFamily: 'monospace',
-          fontSize: value.length > 1 ? '14px' : '18px',
-          color: '#f7fbff',
-          fontStyle: 'bold',
-          align: 'center',
-        })
-        .setOrigin(0.5);
+  const container = scene.add.container(0, 0, [base, cap, spring, turret]);
+  container.setDepth(5);
+  layer.add(container);
 
-      scene.endGame.gridLabels.push({ cell, label, row, col, value });
-      scene.endGame.container.add(cell);
-      scene.endGame.container.add(label);
+  return {
+    container, base, cap, spring, turret, tLight,
+    x: 0, y: 0, w: PLAT_W, h: PLAT_H, type: 'normal',
+    vx: 0, dx: 0, minX: 0, maxX: 0, hasTurret: false, broken: false,
+  };
+}
+
+function makeHazard(scene, layer) {
+  const body = scene.add.circle(0, 0, 13, COLORS.turretLight);
+  body.setStrokeStyle(2, 0x05122a, 0.8);
+  const wingL = scene.add.rectangle(-15, 0, 10, 4, 0x2b2f3a);
+  const wingR = scene.add.rectangle(15, 0, 10, 4, 0x2b2f3a);
+  const eye = scene.add.circle(0, -2, 4, 0x111111);
+  const container = scene.add.container(0, 0, [wingL, wingR, body, eye]);
+  container.setDepth(8);
+  container.setVisible(false);
+  layer.add(container);
+  return { container, x: 0, y: 0, vx: 0, active: false };
+}
+
+// =====================================================================
+// Cámaras (split-screen)
+// =====================================================================
+
+function setupCameras(scene, twoPlayers) {
+  const main = scene.cameras.main;
+  if (twoPlayers) {
+    main.setViewport(0, 0, SPLIT_W, H);
+    main.setScroll(scene.fields[0].originX, 0);
+    scene.cam2.setViewport(SPLIT_W, 0, SPLIT_W, H);
+    scene.cam2.setScroll(scene.fields[1].originX, 0);
+    scene.cam2.setVisible(true);
+  } else {
+    main.setViewport(0, 0, FULL_W, H);
+    main.setScroll(scene.fields[0].originX, 0);
+    scene.cam2.setVisible(false);
+  }
+}
+
+function teardownCameras(scene) {
+  scene.cameras.main.setViewport(0, 0, FULL_W, H);
+  scene.cameras.main.setScroll(0, 0);
+  scene.cam2.setVisible(false);
+}
+
+// =====================================================================
+// Inicio de partida
+// =====================================================================
+
+function startMatch(scene) {
+  const s = scene.state;
+  const two = s.twoPlayers;
+
+  scene.startScreen.container.setVisible(false);
+  scene.selectScreen.container.setVisible(false);
+  scene.resultsScreen.container.setVisible(false);
+
+  scene.fields[0].width = two ? SPLIT_W : FULL_W;
+  scene.fields[1].width = SPLIT_W;
+  scene.fields[0].active = true;
+  scene.fields[1].active = two;
+
+  scene.players[0].charIndex = s.sel.p1;
+  scene.players[1].charIndex = s.sel.p2;
+
+  resetField(scene, scene.fields[0]);
+  if (two) resetField(scene, scene.fields[1]);
+  else hideField(scene.fields[1]);
+
+  setupCameras(scene, two);
+  refreshHud(scene);
+  s.phase = 'playing';
+}
+
+function resetField(scene, field) {
+  const pl = field.player;
+  const left = field.originX;
+  const cx = left + field.width / 2;
+
+  setPlayerCharacter(pl, pl.charIndex);
+  pl.alive = true;
+  pl.lives = START_LIVES;
+  pl.vx = 0; pl.vy = 0;
+  pl.x = cx; pl.y = START_Y;
+  pl.grounded = false;
+  pl.platform = null;
+  pl.airImpulse = true;
+  pl.impulseCdUntil = 0;
+  pl.invulnUntil = 0;
+  pl.fallGraceUntil = 0;
+  pl.minY = START_Y;
+  pl.height = 0;
+  pl.sprite.setVisible(true).setAlpha(1).setPosition(pl.x, pl.y);
+
+  field.camera.setScroll(left, 0);
+  field.maxHeight = 0;
+  field.nextHazardAt = 0;
+
+  // suelo de arranque
+  field.highestY = START_Y + 50;
+  const ground = field.platforms[0];
+  configurePlatform(ground, 'normal', 0);
+  ground.hasTurret = false;
+  ground.turret.setVisible(false);
+  ground.w = field.width - 60;
+  ground.base.setSize(ground.w, PLAT_H);
+  ground.cap.setSize(ground.w, 4);
+  placePlatform(ground, cx, START_Y + 50);
+
+  for (let i = 1; i < field.platforms.length; i++) {
+    const p = field.platforms[i];
+    p.w = PLAT_W;
+    p.base.setSize(PLAT_W, PLAT_H);
+    p.cap.setSize(PLAT_W, 4);
+    spawnAbove(field, p, 0);
+  }
+
+  for (const hz of field.hazards) { hz.active = false; hz.container.setVisible(false); }
+
+  // estrellas dentro del campo
+  for (const st of field.stars) {
+    st.x = left + Phaser.Math.Between(10, field.width - 10);
+    st.y = Phaser.Math.Between(0, H);
+  }
+}
+
+function hideField(field) {
+  field.player.sprite.setVisible(false);
+  for (const p of field.platforms) p.container.setVisible(false);
+  for (const hz of field.hazards) hz.container.setVisible(false);
+}
+
+function setPlayerCharacter(pl, idx) {
+  pl.charIndex = idx;
+  pl.sprite.setTexture(CHARACTERS[idx].key);
+  pl.sprite.setDisplaySize(44, 62);
+}
+
+function placePlatform(p, x, y) {
+  p.x = x; p.y = y;
+  p.container.setPosition(x, y);
+}
+
+function spawnAbove(field, p, heightProgress) {
+  const gap = Phaser.Math.Between(54, 74 + Math.min(46, heightProgress / 150));
+  const newY = field.highestY - gap;
+  field.highestY = newY;
+
+  const m = 50;
+  const x = Phaser.Math.Between(field.originX + m, field.originX + field.width - m);
+
+  const type = pickPlatformType(heightProgress);
+  configurePlatform(p, type, heightProgress);
+  placePlatform(p, x, newY);
+
+  const turretProb = Phaser.Math.Clamp((heightProgress - 250) / 6000, 0, 0.28);
+  p.hasTurret = type !== 'spring' && Math.random() < turretProb;
+  p.turret.setVisible(p.hasTurret);
+}
+
+function pickPlatformType(h) {
+  const springProb = 0.1;
+  const moveProb = Phaser.Math.Clamp(0.12 + h / 4000, 0, 0.5);
+  const breakProb = Phaser.Math.Clamp((h - 400) / 8000, 0, 0.2);
+  const r = Math.random();
+  if (r < springProb) return 'spring';
+  if (r < springProb + moveProb) return 'moving';
+  if (r < springProb + moveProb + breakProb) return 'breakable';
+  return 'normal';
+}
+
+function configurePlatform(p, type, h) {
+  p.type = type;
+  p.broken = false;
+  p.dx = 0;
+  p.container.setVisible(true);
+  p.container.setAlpha(1);
+  p.base.setVisible(true);
+  p.cap.setVisible(true);
+  p.spring.setVisible(false);
+
+  if (type === 'spring') {
+    p.base.setFillStyle(COLORS.platSpring);
+    p.spring.setVisible(true);
+    p.vx = 0;
+  } else if (type === 'moving') {
+    p.base.setFillStyle(COLORS.platMove);
+    const speed = 50 + Math.random() * 60 + Math.min(70, h / 100);
+    p.vx = Math.random() < 0.5 ? -speed : speed;
+  } else if (type === 'breakable') {
+    p.base.setFillStyle(COLORS.platBreak);
+    p.vx = 0;
+  } else {
+    p.base.setFillStyle(COLORS.platNormal);
+    p.vx = 0;
+  }
+}
+
+// =====================================================================
+// Loop de juego
+// =====================================================================
+
+function updatePlaying(scene, dt, time) {
+  if (consumeAnyPressedControl(scene, ['START1', 'START2'])) {
+    endMatch(scene);
+    return;
+  }
+
+  for (const field of scene.fields) {
+    if (field.active) updateField(scene, field, dt, time);
+  }
+
+  const anyAlive = scene.fields.some((f) => f.active && f.player.alive);
+  if (!anyAlive) endMatch(scene);
+}
+
+function updateField(scene, field, dt, time) {
+  const pl = field.player;
+  const cam = field.camera;
+
+  updatePlatforms(scene, field, dt);
+
+  if (pl.alive) stepPlayer(scene, field, dt, time);
+
+  // cámara: sigue a su jugador, nunca retrocede
+  if (pl.alive) {
+    const desired = pl.y - H * ANCHOR_FROM_TOP;
+    if (desired < cam.scrollY) cam.scrollY = desired;
+  }
+
+  // altura / score
+  if (pl.alive) {
+    if (pl.y < pl.minY) pl.minY = pl.y;
+    pl.height = Math.max(0, Math.floor((START_Y - pl.minY) / 10));
+    if (pl.height > field.maxHeight) field.maxHeight = pl.height;
+  }
+
+  // caída fuera de cámara
+  const bottom = cam.scrollY + H;
+  if (pl.alive && pl.y - P_HALF_H > bottom + 40) {
+    handleFall(scene, field, time);
+  }
+
+  // drones
+  updateHazards(scene, field, dt, time);
+
+  // colisiones + parpadeo
+  if (pl.alive) {
+    if (time < pl.invulnUntil) {
+      pl.sprite.setAlpha((Math.floor(time / 90) % 2) === 0 ? 0.35 : 1);
+    } else {
+      pl.sprite.setAlpha(1);
+    }
+    checkTurrets(scene, field, time);
+    checkHazards(scene, field, time);
+  }
+
+  recyclePlatforms(field, cam);
+  recycleStars(field, cam);
+  refreshFieldHud(scene, field);
+}
+
+function updatePlatforms(scene, field, dt) {
+  const left = field.originX;
+  const right = field.originX + field.width;
+  for (const p of field.platforms) {
+    p.dx = 0;
+    if (p.type === 'moving' && !p.broken) {
+      let nx = p.x + p.vx * dt;
+      if (nx < left + 50) { nx = left + 50; p.vx = Math.abs(p.vx); }
+      else if (nx > right - 50) { nx = right - 50; p.vx = -Math.abs(p.vx); }
+      p.dx = nx - p.x;
+      p.x = nx;
+      p.container.x = nx;
+    }
+    if (p.hasTurret) {
+      p.tLight.setVisible((Math.floor(scene.time.now / 300) % 2) === 0);
+    }
+  }
+}
+
+function updateHazards(scene, field, dt, time) {
+  const cam = field.camera;
+  const left = field.originX;
+  const right = field.originX + field.width;
+  for (const hz of field.hazards) {
+    if (!hz.active) continue;
+    hz.x += hz.vx * dt;
+    if (hz.x < left + 26) { hz.x = left + 26; hz.vx = Math.abs(hz.vx); }
+    else if (hz.x > right - 26) { hz.x = right - 26; hz.vx = -Math.abs(hz.vx); }
+    hz.container.setPosition(hz.x, hz.y);
+    if (hz.y > cam.scrollY + H + 60) {
+      hz.active = false;
+      hz.container.setVisible(false);
     }
   }
 
-  scene.endGame.saveStatus = scene.add
-    .text(GAME_WIDTH / 2, 590, '', {
-      fontFamily: 'monospace',
-      fontSize: '11px',
-      color: '#e1ff00',
-      align: 'center',
-    })
-    .setOrigin(0.5);
-
-  scene.endGame.leaderboard = scene.add
-    .text(GAME_WIDTH / 2, 308, '', {
-      fontFamily: 'monospace',
-      fontSize: '12px',
-      color: '#f7ffd8',
-      align: 'center',
-      lineSpacing: 4,
-    })
-    .setOrigin(0.5, 0);
-
-  scene.endGame.container.add(scene.endGame.title);
-  scene.endGame.container.add(scene.endGame.summary);
-  scene.endGame.container.add(scene.endGame.nameLabel);
-  scene.endGame.container.add(scene.endGame.nameValue);
-  scene.endGame.container.add(scene.endGame.instructions);
-  scene.endGame.container.add(scene.endGame.leaderboardTitle);
-  scene.endGame.container.add(scene.endGame.leaderboard);
-  scene.endGame.container.add(scene.endGame.saveStatus);
+  const h = field.maxHeight;
+  if (h < 120 || time < field.nextHazardAt) return;
+  field.nextHazardAt = time + Math.max(900, 2600 - h * 4);
+  const hz = field.hazards.find((e) => !e.active);
+  if (!hz) return;
+  hz.active = true;
+  hz.x = Phaser.Math.Between(left + 40, right - 40);
+  hz.y = cam.scrollY - 30;
+  const speed = 70 + Math.min(120, h / 30) + Math.random() * 50;
+  hz.vx = Math.random() < 0.5 ? -speed : speed;
+  hz.container.setVisible(true).setPosition(hz.x, hz.y);
 }
 
-function createControls(scene) {
-  scene.controls = {
-    held: Object.create(null),
-    pressed: Object.create(null),
+function stepPlayer(scene, field, dt, time) {
+  const pl = field.player;
+  const held = scene.controls.held;
+  const left = field.originX;
+  const right = field.originX + field.width;
+
+  let dir = 0;
+  if (held[pl.prefix + '_L']) dir -= 1;
+  if (held[pl.prefix + '_R']) dir += 1;
+  pl.vx = dir * MOVE_SPEED;
+  pl.x += pl.vx * dt;
+
+  if (pl.grounded && pl.platform && !pl.platform.broken) {
+    const p = pl.platform;
+    if (Math.abs(pl.x - p.x) > p.w / 2 + P_HALF_W * 0.4) {
+      pl.grounded = false;
+      pl.platform = null;
+    } else {
+      pl.x += p.dx;
+      pl.y = p.y - p.h / 2 - P_HALF_H;
+      pl.vy = 0;
+      pl.airImpulse = true;
+    }
+  } else {
+    pl.grounded = false;
+  }
+
+  pl.x = Phaser.Math.Wrap(pl.x, left, right);
+
+  if (pl.grounded && held[pl.prefix + '_U']) {
+    pl.vy = -JUMP_V;
+    pl.grounded = false;
+    pl.platform = null;
+    pl.airImpulse = true;
+    tone(scene, 620, 0.08, 0.12);
+  }
+
+  if (!pl.grounded && pl.airImpulse &&
+      consumePressed(scene, pl.prefix + '_1') && time > pl.impulseCdUntil) {
+    pl.vy = -IMPULSE_V;
+    pl.airImpulse = false;
+    pl.impulseCdUntil = time + IMPULSE_CD;
+    tone(scene, 880, 0.1, 0.12);
+  }
+
+  if (!pl.grounded) {
+    pl.vy += GRAVITY * dt;
+    if (pl.vy > MAX_FALL) pl.vy = MAX_FALL;
+    pl.y += pl.vy * dt;
+    landingCheck(scene, field);
+  }
+
+  pl.sprite.setPosition(pl.x, pl.y);
+}
+
+function landingCheck(scene, field) {
+  const pl = field.player;
+  if (pl.vy < 0) return;
+
+  const feet = pl.y + P_HALF_H;
+  for (const p of field.platforms) {
+    if (p.broken) continue;
+    if (Math.abs(pl.x - p.x) > p.w / 2 + P_HALF_W * 0.7) continue;
+
+    const top = p.y - p.h / 2;
+    if (feet >= top && feet <= top + 22 + Math.abs(pl.vy) * 0.016) {
+      if (p.type === 'spring') {
+        pl.y = top - P_HALF_H; pl.vy = -SPRING_V;
+        pl.grounded = false; pl.platform = null; pl.airImpulse = true;
+        tone(scene, 1040, 0.12, 0.14);
+        return;
+      }
+      if (p.type === 'breakable') {
+        pl.y = top - P_HALF_H; pl.vy = -JUMP_V * 0.62;
+        pl.grounded = false; pl.platform = null; pl.airImpulse = true;
+        breakPlatform(scene, p);
+        tone(scene, 240, 0.12, 0.12);
+        return;
+      }
+      pl.y = top - P_HALF_H; pl.vy = 0;
+      pl.grounded = true; pl.platform = p; pl.airImpulse = true;
+      return;
+    }
+  }
+}
+
+function breakPlatform(scene, p) {
+  p.broken = true;
+  p.hasTurret = false;
+  p.turret.setVisible(false);
+  scene.tweens.add({
+    targets: p.container,
+    alpha: 0,
+    duration: 220,
+    onComplete: () => { p.container.setVisible(false); p.container.setAlpha(1); },
+  });
+}
+
+function checkTurrets(scene, field, time) {
+  const pl = field.player;
+  if (time < pl.invulnUntil) return;
+  for (const p of field.platforms) {
+    if (!p.hasTurret || p.broken) continue;
+    const tx = p.x + (PLAT_W / 2 - 12);
+    const ty = p.y - PLAT_H / 2 - 8;
+    if (Math.abs(pl.x - tx) < P_HALF_W + 11 && Math.abs(pl.y - ty) < P_HALF_H + 12) {
+      hitPlayer(scene, field, time, tx);
+      return;
+    }
+  }
+}
+
+function checkHazards(scene, field, time) {
+  const pl = field.player;
+  if (time < pl.invulnUntil) return;
+  for (const hz of field.hazards) {
+    if (!hz.active) continue;
+    if (Math.abs(pl.x - hz.x) < P_HALF_W + 12 && Math.abs(pl.y - hz.y) < P_HALF_H + 12) {
+      hitPlayer(scene, field, time, hz.x);
+      return;
+    }
+  }
+}
+
+function hitPlayer(scene, field, time, fromX) {
+  const pl = field.player;
+  pl.lives -= 1;
+  pl.invulnUntil = time + INVULN_MS;
+  pl.vy = 260;
+  pl.vx = pl.x < fromX ? -260 : 260;
+  pl.x += pl.vx * 0.016;
+  pl.grounded = false;
+  pl.platform = null;
+  tone(scene, 150, 0.18, 0.16);
+  if (pl.lives <= 0) eliminate(field);
+}
+
+function handleFall(scene, field, time) {
+  const pl = field.player;
+  const cam = field.camera;
+  const inGrace = time < pl.fallGraceUntil;
+  if (!inGrace) {
+    pl.lives -= 1;
+    pl.fallGraceUntil = time + FALL_GRACE_MS;
+    tone(scene, 120, 0.22, 0.16);
+    if (pl.lives <= 0) { eliminate(field); return; }
+  } else {
+    tone(scene, 200, 0.1, 0.1);
+  }
+  pl.y = cam.scrollY + 90;
+  pl.x = Phaser.Math.Clamp(pl.x, field.originX + 40, field.originX + field.width - 40);
+  pl.vy = -JUMP_V;
+  pl.grounded = false;
+  pl.platform = null;
+  pl.invulnUntil = time + INVULN_MS;
+  pl.sprite.setPosition(pl.x, pl.y);
+}
+
+function eliminate(field) {
+  field.player.alive = false;
+  field.player.sprite.setVisible(false);
+}
+
+function recyclePlatforms(field, cam) {
+  const limit = cam.scrollY + H + 80;
+  const h = field.maxHeight;
+  for (const p of field.platforms) {
+    if (p.y > limit) {
+      if (p.w !== PLAT_W) {
+        p.w = PLAT_W;
+        p.base.setSize(PLAT_W, PLAT_H);
+        p.cap.setSize(PLAT_W, 4);
+      }
+      p.container.setVisible(true).setAlpha(1);
+      spawnAbove(field, p, h);
+    }
+  }
+}
+
+function recycleStars(field, cam) {
+  const limit = cam.scrollY + H + 10;
+  const top = cam.scrollY - 10;
+  for (const st of field.stars) {
+    if (st.y > limit) {
+      st.y = top;
+      st.x = field.originX + Phaser.Math.Between(6, field.width - 6);
+    }
+  }
+}
+
+// =====================================================================
+// HUD (uno por jugador, repartido por cámara)
+// =====================================================================
+
+function createHud(scene) {
+  scene.hud = { p1: makeHudSide(scene, '#00e0ff'), p2: makeHudSide(scene, '#ff5da2') };
+  scene.fields[0].hud = scene.hud.p1;
+  scene.fields[1].hud = scene.hud.p2;
+}
+
+function makeHudSide(scene, color) {
+  const container = scene.add.container(0, 0).setScrollFactor(0).setDepth(100);
+  const name = scene.add.text(10, 8, '', {
+    fontFamily: 'monospace', fontSize: '14px', color, fontStyle: 'bold',
+  });
+  const height = scene.add.text(10, 26, '', {
+    fontFamily: 'monospace', fontSize: '20px', color: '#e1ff00', fontStyle: 'bold',
+  });
+  const lives = scene.add.text(SPLIT_W - 10, 12, '', {
+    fontFamily: 'monospace', fontSize: '18px', color,
+  }).setOrigin(1, 0);
+  const divider = scene.add.rectangle(SPLIT_W - 2, H / 2, 3, H, COLORS.divider, 0.8);
+  container.add([name, height, lives, divider]);
+  return { container, name, height, lives, divider };
+}
+
+function refreshHud(scene) {
+  scene.hud.p1.container.setVisible(true);
+  scene.hud.p2.container.setVisible(scene.state.twoPlayers);
+  // el divisor solo tiene sentido en split-screen (el de la mitad izquierda)
+  scene.hud.p1.divider.setVisible(scene.state.twoPlayers);
+  scene.hud.p2.divider.setVisible(false);
+}
+
+function refreshFieldHud(scene, field) {
+  const pl = field.player;
+  const tag = pl.index === 0 ? 'P1' : 'P2';
+  field.hud.name.setText(tag + ' ' + CHARACTERS[pl.charIndex].name);
+  field.hud.height.setText(String(pl.height).padStart(4, '0') + 'm');
+  field.hud.lives.setText(pl.alive ? '♥'.repeat(pl.lives) : 'FUERA');
+}
+
+// =====================================================================
+// Pantalla de inicio
+// =====================================================================
+
+function createStartScreen(scene) {
+  scene.startScreen = {};
+  const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
+
+  c.add(scene.add.rectangle(W / 2, H / 2, W, H, COLORS.panel, 0.92));
+  c.add(scene.add.text(W / 2, 80, 'SKY JUMP', {
+    fontFamily: 'monospace', fontSize: '56px', color: '#e1ff00', fontStyle: 'bold',
+  }).setOrigin(0.5));
+  c.add(scene.add.text(W / 2, 128, 'CAMPAÑA AL CIELO', {
+    fontFamily: 'monospace', fontSize: '20px', color: '#ff5da2', fontStyle: 'bold',
+  }).setOrigin(0.5));
+  c.add(scene.add.text(W / 2, 178,
+    'Sube saltando de plataforma en plataforma lo más alto posible.\n' +
+    'Joystick: moverte  ·  ARRIBA: saltar  ·  BOTON 1: doble impulso\n' +
+    'Esquiva torretas y drones. 3 vidas.\n' +
+    '2 jugadores: pantalla dividida, ¡gana quien suba más alto!', {
+    fontFamily: 'monospace', fontSize: '13px', color: '#b9c2e0', align: 'center',
+  }).setOrigin(0.5));
+
+  const mkBtn = (y, label) =>
+    scene.add.text(W / 2, y, label, {
+      fontFamily: 'monospace', fontSize: '20px', color: '#f7ffd8',
+      fontStyle: 'bold', backgroundColor: '#1b2a6b', padding: { x: 16, y: 8 },
+    }).setOrigin(0.5);
+
+  scene.startScreen.btn1 = mkBtn(290, '1 JUGADOR');
+  scene.startScreen.btn2 = mkBtn(340, '2 JUGADORES');
+  c.add(scene.startScreen.btn1);
+  c.add(scene.startScreen.btn2);
+
+  c.add(scene.add.text(W / 2, 390, 'Joystick ARRIBA/ABAJO para elegir  ·  START o BOTON 1', {
+    fontFamily: 'monospace', fontSize: '12px', color: '#8b95bb',
+  }).setOrigin(0.5));
+
+  c.add(scene.add.text(W / 2, 440, '— MEJORES ALTURAS —', {
+    fontFamily: 'monospace', fontSize: '13px', color: '#e1ff00', fontStyle: 'bold',
+  }).setOrigin(0.5));
+  scene.startScreen.lead = scene.add.text(W / 2, 470, '', {
+    fontFamily: 'monospace', fontSize: '13px', color: '#f7ffd8', align: 'center',
+  }).setOrigin(0.5);
+  c.add(scene.startScreen.lead);
+
+  scene.startScreen.container = c;
+}
+
+function showStartScreen(scene) {
+  scene.state.phase = 'start';
+  scene.state.nav = scene.state.twoPlayers ? 1 : 0;
+  teardownCameras(scene);
+  hideField(scene.fields[1]);
+  scene.hud.p1.container.setVisible(false);
+  scene.hud.p2.container.setVisible(false);
+  scene.selectScreen.container.setVisible(false);
+  scene.resultsScreen.container.setVisible(false);
+  scene.startScreen.container.setVisible(true);
+  updateStartCursor(scene);
+}
+
+function updateStartCursor(scene) {
+  const sel = scene.state.nav;
+  scene.startScreen.btn1.setBackgroundColor(sel === 0 ? '#e1ff00' : '#1b2a6b');
+  scene.startScreen.btn1.setColor(sel === 0 ? '#04110b' : '#f7ffd8');
+  scene.startScreen.btn2.setBackgroundColor(sel === 1 ? '#e1ff00' : '#1b2a6b');
+  scene.startScreen.btn2.setColor(sel === 1 ? '#04110b' : '#f7ffd8');
+}
+
+function handleStartMenu(scene) {
+  if (consumeAnyPressedControl(scene, ['P1_U', 'P2_U', 'P1_D', 'P2_D'])) {
+    scene.state.nav = scene.state.nav === 0 ? 1 : 0;
+    updateStartCursor(scene);
+    tone(scene, 500, 0.05, 0.1);
+  }
+  if (consumeAnyPressedControl(scene, ['START1', 'START2', 'P1_1', 'P2_1'])) {
+    scene.state.twoPlayers = scene.state.nav === 1;
+    tone(scene, 760, 0.1, 0.12);
+    showSelect(scene);
+  }
+}
+
+// =====================================================================
+// Pantalla de selección de personaje
+// =====================================================================
+
+function createSelectScreen(scene) {
+  scene.selectScreen = {};
+  const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
+
+  c.add(scene.add.rectangle(W / 2, H / 2, W, H, COLORS.panel, 0.94));
+  c.add(scene.add.text(W / 2, 60, 'ELIGE TU CANDIDATO', {
+    fontFamily: 'monospace', fontSize: '30px', color: '#e1ff00', fontStyle: 'bold',
+  }).setOrigin(0.5));
+
+  // panel P1
+  scene.selectScreen.p1Sprite = scene.add.sprite(W / 2 - 180, 250, CHARACTERS[0].key).setScale(3);
+  scene.selectScreen.p1Name = scene.add.text(W / 2 - 180, 330, '', {
+    fontFamily: 'monospace', fontSize: '16px', color: '#00e0ff', fontStyle: 'bold',
+  }).setOrigin(0.5);
+  scene.selectScreen.p1Ready = scene.add.text(W / 2 - 180, 360, '', {
+    fontFamily: 'monospace', fontSize: '14px', color: '#8cff5d', fontStyle: 'bold',
+  }).setOrigin(0.5);
+  c.add(scene.add.text(W / 2 - 180, 150, 'P1', {
+    fontFamily: 'monospace', fontSize: '22px', color: '#00e0ff', fontStyle: 'bold',
+  }).setOrigin(0.5));
+  c.add([scene.selectScreen.p1Sprite, scene.selectScreen.p1Name, scene.selectScreen.p1Ready]);
+
+  // panel P2
+  scene.selectScreen.p2Sprite = scene.add.sprite(W / 2 + 180, 250, CHARACTERS[1].key).setScale(3);
+  scene.selectScreen.p2Name = scene.add.text(W / 2 + 180, 330, '', {
+    fontFamily: 'monospace', fontSize: '16px', color: '#ff5da2', fontStyle: 'bold',
+  }).setOrigin(0.5);
+  scene.selectScreen.p2Ready = scene.add.text(W / 2 + 180, 360, '', {
+    fontFamily: 'monospace', fontSize: '14px', color: '#8cff5d', fontStyle: 'bold',
+  }).setOrigin(0.5);
+  scene.selectScreen.p2Label = scene.add.text(W / 2 + 180, 150, 'P2', {
+    fontFamily: 'monospace', fontSize: '22px', color: '#ff5da2', fontStyle: 'bold',
+  }).setOrigin(0.5);
+  c.add([scene.selectScreen.p2Label, scene.selectScreen.p2Sprite, scene.selectScreen.p2Name, scene.selectScreen.p2Ready]);
+
+  c.add(scene.add.text(W / 2, 440,
+    'Joystick IZQ/DER: cambiar  ·  BOTON 1: confirmar  ·  BOTON 2: cambiar\n' +
+    'START para volver al menú', {
+    fontFamily: 'monospace', fontSize: '12px', color: '#8b95bb', align: 'center',
+  }).setOrigin(0.5));
+
+  scene.selectScreen.container = c;
+}
+
+function showSelect(scene) {
+  scene.state.phase = 'select';
+  scene.state.sel = { p1: 0, p2: 1 % CHARACTERS.length, p1ok: false, p2ok: false, cd1: 0, cd2: 0 };
+  teardownCameras(scene);
+  scene.hud.p1.container.setVisible(false);
+  scene.hud.p2.container.setVisible(false);
+  scene.startScreen.container.setVisible(false);
+
+  const two = scene.state.twoPlayers;
+  scene.selectScreen.p2Sprite.setVisible(two);
+  scene.selectScreen.p2Name.setVisible(two);
+  scene.selectScreen.p2Ready.setVisible(two);
+  scene.selectScreen.p2Label.setVisible(two);
+
+  scene.selectScreen.container.setVisible(true);
+  refreshSelect(scene);
+}
+
+function refreshSelect(scene) {
+  const s = scene.state.sel;
+  const ss = scene.selectScreen;
+  ss.p1Sprite.setTexture(CHARACTERS[s.p1].key);
+  ss.p1Name.setText(CHARACTERS[s.p1].name);
+  ss.p1Ready.setText(s.p1ok ? 'LISTO' : '');
+  ss.p2Sprite.setTexture(CHARACTERS[s.p2].key);
+  ss.p2Name.setText(CHARACTERS[s.p2].name);
+  ss.p2Ready.setText(s.p2ok ? 'LISTO' : '');
+}
+
+function handleSelect(scene, time) {
+  const s = scene.state.sel;
+  const two = scene.state.twoPlayers;
+  const n = CHARACTERS.length;
+
+  if (consumeAnyPressedControl(scene, ['START1', 'START2'])) {
+    // START vuelve al menú principal
+    showStartScreen(scene);
+    return;
+  }
+
+  // P1
+  if (!s.p1ok && time > s.cd1) {
+    if (isControlHeld(scene, 'P1_L')) { s.p1 = (s.p1 + n - 1) % n; s.cd1 = time + 180; refreshSelect(scene); tone(scene, 520, 0.04, 0.1); }
+    else if (isControlHeld(scene, 'P1_R')) { s.p1 = (s.p1 + 1) % n; s.cd1 = time + 180; refreshSelect(scene); tone(scene, 520, 0.04, 0.1); }
+  }
+  if (consumePressed(scene, 'P1_1')) { s.p1ok = true; refreshSelect(scene); tone(scene, 760, 0.08, 0.12); }
+  if (consumePressed(scene, 'P1_2')) { s.p1ok = false; refreshSelect(scene); }
+
+  // P2
+  if (two) {
+    if (!s.p2ok && time > s.cd2) {
+      if (isControlHeld(scene, 'P2_L')) { s.p2 = (s.p2 + n - 1) % n; s.cd2 = time + 180; refreshSelect(scene); tone(scene, 520, 0.04, 0.1); }
+      else if (isControlHeld(scene, 'P2_R')) { s.p2 = (s.p2 + 1) % n; s.cd2 = time + 180; refreshSelect(scene); tone(scene, 520, 0.04, 0.1); }
+    }
+    if (consumePressed(scene, 'P2_1')) { s.p2ok = true; refreshSelect(scene); tone(scene, 760, 0.08, 0.12); }
+    if (consumePressed(scene, 'P2_2')) { s.p2ok = false; refreshSelect(scene); }
+  }
+
+  if (s.p1ok && (!two || s.p2ok)) {
+    tone(scene, 900, 0.12, 0.13);
+    startMatch(scene);
+  }
+}
+
+// =====================================================================
+// Resultados + iniciales
+// =====================================================================
+
+function createResultsScreen(scene) {
+  scene.resultsScreen = {};
+  const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
+
+  c.add(scene.add.rectangle(W / 2, H / 2, W, H, COLORS.panel, 0.94));
+  c.add(scene.add.text(W / 2, 64, 'FIN DE LA CAMPAÑA', {
+    fontFamily: 'monospace', fontSize: '32px', color: '#e1ff00', fontStyle: 'bold',
+  }).setOrigin(0.5));
+
+  scene.resultsScreen.result = scene.add.text(W / 2, 150, '', {
+    fontFamily: 'monospace', fontSize: '20px', color: '#f7ffd8', align: 'center', fontStyle: 'bold',
+  }).setOrigin(0.5);
+  c.add(scene.resultsScreen.result);
+
+  scene.resultsScreen.prompt = scene.add.text(W / 2, 240, 'Escribe tus iniciales:', {
+    fontFamily: 'monospace', fontSize: '15px', color: '#b9c2e0',
+  }).setOrigin(0.5);
+  c.add(scene.resultsScreen.prompt);
+
+  scene.resultsScreen.initials = scene.add.text(W / 2, 292, '', {
+    fontFamily: 'monospace', fontSize: '44px', color: '#e1ff00', fontStyle: 'bold',
+  }).setOrigin(0.5);
+  c.add(scene.resultsScreen.initials);
+
+  scene.resultsScreen.help = scene.add.text(W / 2, 350,
+    'Joystick: ARRIBA/ABAJO letra · IZQ/DER hueco\n' +
+    'BOTON 1: guardar    ·    START: omitir', {
+    fontFamily: 'monospace', fontSize: '12px', color: '#8b95bb', align: 'center',
+  }).setOrigin(0.5);
+  c.add(scene.resultsScreen.help);
+
+  scene.resultsScreen.status = scene.add.text(W / 2, 410, '', {
+    fontFamily: 'monospace', fontSize: '13px', color: '#ff5da2',
+  }).setOrigin(0.5);
+  c.add(scene.resultsScreen.status);
+
+  c.add(scene.add.text(W / 2, 460, '— MEJORES ALTURAS —', {
+    fontFamily: 'monospace', fontSize: '13px', color: '#e1ff00', fontStyle: 'bold',
+  }).setOrigin(0.5));
+  scene.resultsScreen.lead = scene.add.text(W / 2, 490, '', {
+    fontFamily: 'monospace', fontSize: '13px', color: '#f7ffd8', align: 'center',
+  }).setOrigin(0.5);
+  c.add(scene.resultsScreen.lead);
+
+  scene.resultsScreen.container = c;
+}
+
+function endMatch(scene) {
+  const s = scene.state;
+  const p1 = scene.players[0];
+  const p2 = scene.players[1];
+
+  let resultText;
+  let best;
+  if (s.twoPlayers) {
+    if (p1.height > p2.height) resultText = 'GANA P1\nP1 ' + p1.height + 'm   ·   P2 ' + p2.height + 'm';
+    else if (p2.height > p1.height) resultText = 'GANA P2\nP1 ' + p1.height + 'm   ·   P2 ' + p2.height + 'm';
+    else resultText = 'EMPATE\nP1 ' + p1.height + 'm   ·   P2 ' + p2.height + 'm';
+    best = Math.max(p1.height, p2.height);
+  } else {
+    resultText = 'ALTURA: ' + p1.height + 'm';
+    best = p1.height;
+  }
+
+  s.pendingScore = best;
+  s.entry = { row: [0, 0, 0], slot: 0, cdUntil: 0 };
+  s.phase = 'results';
+
+  teardownCameras(scene);
+  scene.fields[0].active = false;
+  scene.fields[1].active = false;
+  scene.hud.p1.container.setVisible(false);
+  scene.hud.p2.container.setVisible(false);
+
+  scene.resultsScreen.result.setText(resultText);
+  scene.resultsScreen.status.setText('');
+  scene.resultsScreen.prompt.setVisible(best > 0);
+  scene.resultsScreen.initials.setVisible(best > 0);
+  scene.resultsScreen.help.setVisible(best > 0);
+  refreshInitials(scene);
+  refreshLeaderboards(scene);
+  scene.resultsScreen.container.setVisible(true);
+  tone(scene, 400, 0.3, 0.14);
+}
+
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function refreshInitials(scene) {
+  const e = scene.state.entry;
+  scene.resultsScreen.initials.setText(
+    e.row.map((idx, i) => (i === e.slot ? '[' + ALPHABET[idx] + ']' : ' ' + ALPHABET[idx] + ' ')).join(''),
+  );
+}
+
+function handleResults(scene, time) {
+  const e = scene.state.entry;
+  const hasScore = scene.state.pendingScore > 0;
+
+  if (hasScore && time > e.cdUntil) {
+    let moved = false;
+    if (isControlHeld(scene, 'P1_U') || isControlHeld(scene, 'P2_U')) { e.row[e.slot] = (e.row[e.slot] + 1) % 26; moved = true; }
+    else if (isControlHeld(scene, 'P1_D') || isControlHeld(scene, 'P2_D')) { e.row[e.slot] = (e.row[e.slot] + 25) % 26; moved = true; }
+    else if (isControlHeld(scene, 'P1_L') || isControlHeld(scene, 'P2_L')) { e.slot = (e.slot + 2) % 3; moved = true; }
+    else if (isControlHeld(scene, 'P1_R') || isControlHeld(scene, 'P2_R')) { e.slot = (e.slot + 1) % 3; moved = true; }
+    if (moved) { e.cdUntil = time + 160; refreshInitials(scene); tone(scene, 520, 0.04, 0.1); }
+  }
+
+  if (hasScore && consumeAnyPressedControl(scene, ['P1_1', 'P2_1'])) { saveScore(scene); return; }
+  if (consumeAnyPressedControl(scene, ['START1', 'START2'])) returnToStart(scene);
+}
+
+function saveScore(scene) {
+  const e = scene.state.entry;
+  const name = e.row.map((i) => ALPHABET[i]).join('');
+  const entry = {
+    name,
+    score: scene.state.pendingScore,
+    mode: scene.state.twoPlayers ? '2P' : '1P',
+    savedAt: new Date().toISOString().slice(0, 10),
   };
+  scene.resultsScreen.status.setText('Guardando...');
+  scene.state.phase = 'saved';
+
+  persistHighScore(entry)
+    .then((scores) => {
+      scene.state.highScores = scores;
+      refreshLeaderboards(scene);
+      scene.resultsScreen.status.setText('¡Guardado ' + name + '! START para volver.');
+    })
+    .catch(() => scene.resultsScreen.status.setText('No se pudo guardar. START para volver.'));
+}
+
+function returnToStart(scene) {
+  showStartScreen(scene);
+}
+
+// =====================================================================
+// Leaderboard
+// =====================================================================
+
+function refreshLeaderboards(scene) {
+  const lines = scene.state.highScores.length
+    ? scene.state.highScores.map((e, i) =>
+        String(i + 1) + '. ' + e.name.padEnd(3, ' ') + '  ' +
+        String(e.score).padStart(4, '0') + 'm  ' + e.mode)
+    : ['SIN PUNTAJES AUN'];
+  const text = lines.join('\n');
+  if (scene.startScreen) scene.startScreen.lead.setText(text);
+  if (scene.resultsScreen) scene.resultsScreen.lead.setText(text);
+}
+
+// =====================================================================
+// Audio (tonos generados)
+// =====================================================================
+
+function tone(scene, freq, dur, vol) {
+  try {
+    const ctx = scene.sound.context;
+    if (!ctx || ctx.state === 'suspended') return;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.value = freq;
+    g.gain.value = vol;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    o.stop(ctx.currentTime + dur);
+  } catch (err) {
+    // audio opcional
+  }
+}
+
+// =====================================================================
+// Input (cabinet bridge) — NO modificar el mapeo CABINET_KEYS
+// =====================================================================
+
+function createControls(scene) {
+  scene.controls = { held: Object.create(null), pressed: Object.create(null) };
 
   const onKeyDown = (event) => {
     const key = normalizeIncomingKey(event.key);
-    if (!key) {
-      return;
-    }
-
+    if (!key) return;
     const arcadeCode = KEYBOARD_TO_ARCADE[key];
-    if (!arcadeCode) {
-      return;
-    }
-
-    if (!scene.controls.held[arcadeCode]) {
-      scene.controls.pressed[arcadeCode] = true;
-    }
+    if (!arcadeCode) return;
+    if (!scene.controls.held[arcadeCode]) scene.controls.pressed[arcadeCode] = true;
     scene.controls.held[arcadeCode] = true;
   };
-
   const onKeyUp = (event) => {
     const key = normalizeIncomingKey(event.key);
-    if (!key) {
-      return;
-    }
-
+    if (!key) return;
     const arcadeCode = KEYBOARD_TO_ARCADE[key];
-    if (!arcadeCode) {
-      return;
-    }
-
+    if (!arcadeCode) return;
     scene.controls.held[arcadeCode] = false;
   };
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
-
   scene.events.once('shutdown', () => {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
   });
 }
 
-function startMatch(scene) {
-  scene.physics.resume();
-  scene.startScreen.container.setVisible(false);
-  buildTextBricks(scene);
-  resetBalls(scene);
-  scene.state.scores = { p1: 0, p2: 0 };
-  refreshHud(scene);
-  scene.state.phase = 'playing';
-  scene.hud.status.setText('');
-}
-
-function createStartScreen(scene) {
-  scene.startScreen = {};
-  const c = scene.add.container(0, 0);
-  c.setDepth(15);
-  scene.startScreen.container = c;
-
-  c.add(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.overlay, 0.97));
-
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, 88, 'PLATANUS HACK 26', {
-        fontFamily: 'monospace', fontSize: '16px', color: '#a8c700',
-      })
-      .setOrigin(0.5),
-  );
-  const titleMain = scene.add
-    .text(GAME_WIDTH / 2, 150, 'CDMX EDITION', {
-      fontFamily: 'monospace', fontSize: '38px', color: '#e1ff00', fontStyle: 'bold',
-    })
-    .setOrigin(0.5);
-  c.add(titleMain);
-  scene.tweens.add({
-    targets: titleMain,
-    scale: 1.025,
-    alpha: 0.88,
-    duration: 1100,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut',
-  });
-
-  scene.startScreen.buttons = [];
-  const buttonLabels = ['PLAY', 'LEADERBOARD', 'CONTROLS'];
-  for (let i = 0; i < buttonLabels.length; i += 1) {
-    const y = 232 + i * 50;
-    const bg = scene.add.rectangle(GAME_WIDTH / 2, y, 280, 42, COLORS.cell, 0.95);
-    bg.setStrokeStyle(2, COLORS.frame, 0.8);
-    const label = scene.add
-      .text(GAME_WIDTH / 2, y, buttonLabels[i], {
-        fontFamily: 'monospace', fontSize: '22px', color: '#f7ffd8', fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    c.add(bg);
-    c.add(label);
-    scene.startScreen.buttons.push({ bg, label });
-  }
-
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, 380, 'SCOREBOARD', {
-        fontFamily: 'monospace', fontSize: '14px', color: '#e1ff00', fontStyle: 'bold',
-      })
-      .setOrigin(0.5),
-  );
-  scene.startScreen.leaderboard = scene.add
-    .text(GAME_WIDTH / 2, 402, '', {
-      fontFamily: 'monospace', fontSize: '13px', color: '#f7ffd8', align: 'center', lineSpacing: 4,
-    })
-    .setOrigin(0.5, 0);
-  c.add(scene.startScreen.leaderboard);
-
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 22, 'MOVE ↕   CONFIRM B / START', {
-        fontFamily: 'monospace', fontSize: '11px', color: '#6f7a4a',
-      })
-      .setOrigin(0.5),
-  );
-
-  c.setVisible(false);
-}
-
-function showStartScreen(scene) {
-  scene.state.phase = 'start';
-  scene.state.menu = { cursor: 0, cooldown: 0, lastAxis: 0 };
-  refreshStartScreenLeaderboard(scene);
-  updateStartMenuHighlight(scene);
-  scene.startScreen.container.setVisible(true);
-}
-
-function createLeaderboardScreen(scene) {
-  scene.leaderScreen = {};
-  const c = scene.add.container(0, 0);
-  c.setDepth(16);
-  scene.leaderScreen.container = c;
-
-  c.add(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.overlay, 0.98));
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, 90, 'LEADERBOARD', {
-        fontFamily: 'monospace', fontSize: '30px', color: '#e1ff00', fontStyle: 'bold',
-      })
-      .setOrigin(0.5),
-  );
-
-  scene.leaderScreen.list = scene.add
-    .text(GAME_WIDTH / 2, 160, '', {
-      fontFamily: 'monospace', fontSize: '20px', color: '#f7ffd8',
-      align: 'center', lineSpacing: 12,
-    })
-    .setOrigin(0.5, 0);
-  c.add(scene.leaderScreen.list);
-
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 28, 'PRESS START TO GO BACK', {
-        fontFamily: 'monospace', fontSize: '12px', color: '#6f7a4a',
-      })
-      .setOrigin(0.5),
-  );
-
-  c.setVisible(false);
-}
-
-function createControlsScreen(scene) {
-  scene.controlsScreen = {};
-  const c = scene.add.container(0, 0);
-  c.setDepth(16);
-  scene.controlsScreen.container = c;
-
-  c.add(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.overlay, 0.98));
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, 110, 'CONTROLS', {
-        fontFamily: 'monospace', fontSize: '30px', color: '#e1ff00', fontStyle: 'bold',
-      })
-      .setOrigin(0.5),
-  );
-
-  const lines = [
-    'P1   MOVE  A / D',
-    'P1   DASH  U',
-    '',
-    'P2   MOVE  ← / →',
-    'P2   DASH  R',
-    '',
-    'PAUSE      ENTER',
-  ];
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, 200, lines.join('\n'), {
-        fontFamily: 'monospace', fontSize: '18px', color: '#f7ffd8',
-        align: 'center', lineSpacing: 8,
-      })
-      .setOrigin(0.5, 0),
-  );
-
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 28, 'PRESS START TO GO BACK', {
-        fontFamily: 'monospace', fontSize: '12px', color: '#6f7a4a',
-      })
-      .setOrigin(0.5),
-  );
-
-  c.setVisible(false);
-}
-
-function showControlsScreen(scene) {
-  scene.startScreen.container.setVisible(false);
-  scene.controlsScreen.container.setVisible(true);
-  scene.state.phase = 'controls';
-}
-
-function showLeaderboardScreen(scene) {
-  const lines = scene.state.highScores.length
-    ? scene.state.highScores.map((e, i) =>
-        `${String(i + 1).padStart(2, '0')}  ${e.name.padEnd(3, ' ')}  ${String(e.score).padStart(3, ' ')}  ${e.winner}`,
-      )
-    : ['NO SAVED SCORES YET'];
-  scene.leaderScreen.list.setText(lines.join('\n'));
-  scene.startScreen.container.setVisible(false);
-  scene.leaderScreen.container.setVisible(true);
-  scene.state.phase = 'leaderboard';
-}
-
-function refreshStartScreenLeaderboard(scene) {
-  const lines = scene.state.highScores.length
-    ? scene.state.highScores.map((e, i) =>
-        `${String(i + 1).padStart(2, '0')} ${e.name.padEnd(3, ' ')} ${String(e.score).padStart(2, '0')} ${e.winner}`,
-      )
-    : ['NO SAVED SCORES YET'];
-  scene.startScreen.leaderboard.setText(lines.join('\n'));
-}
-
-function updateStartMenuHighlight(scene) {
-  const cursor = scene.state.menu.cursor;
-  scene.startScreen.buttons.forEach(({ bg, label }, i) => {
-    const active = i === cursor;
-    bg.setFillStyle(active ? COLORS.accent : COLORS.cell, active ? 1 : 0.95);
-    bg.setStrokeStyle(2, active ? COLORS.white : COLORS.frame, active ? 1 : 0.8);
-    label.setColor(active ? '#04110b' : '#f7ffd8');
-  });
-}
-
-function handleStartMenu(scene, time) {
-  const menu = scene.state.menu;
-  const axisY = getVerticalMenuAxis(scene.controls);
-
-  if (time >= menu.cooldown && axisY !== 0 && menu.lastAxis !== axisY) {
-    menu.cursor = Phaser.Math.Wrap(menu.cursor + axisY, 0, scene.startScreen.buttons.length);
-    menu.cooldown = time + 160;
-    updateStartMenuHighlight(scene);
-    playSound(scene, 'click');
-  }
-  if (axisY === 0) {
-    menu.lastAxis = 0;
-  } else {
-    menu.lastAxis = axisY;
-  }
-
-  if (consumeAnyPressedControl(scene, ['P1_1', 'P2_1', 'P1_2', 'P2_2', 'START1', 'START2'])) {
-    playSound(scene, 'select');
-    startAmbientMusic(scene);
-    if (menu.cursor === 0) {
-      startMatch(scene);
-    } else if (menu.cursor === 1) {
-      showLeaderboardScreen(scene);
-    } else {
-      showControlsScreen(scene);
-    }
-  }
-}
-
-function createPauseScreen(scene) {
-  scene.pauseScreen = {};
-  const c = scene.add.container(0, 0);
-  c.setDepth(25);
-  scene.pauseScreen.container = c;
-
-  c.add(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.overlay, 0.82));
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 28, 'PAUSED', {
-        fontFamily: 'monospace', fontSize: '52px', color: '#e1ff00', fontStyle: 'bold',
-      })
-      .setOrigin(0.5),
-  );
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 34, 'PRESS START TO RESUME', {
-        fontFamily: 'monospace', fontSize: '16px', color: '#a8ad8a',
-      })
-      .setOrigin(0.5),
-  );
-
-  c.setVisible(false);
-}
-
-function pauseMatch(scene) {
-  scene.state.phase = 'paused';
-  scene.physics.pause();
-  scene.pauseScreen.container.setVisible(true);
-}
-
-function resumeMatch(scene) {
-  scene.pauseScreen.container.setVisible(false);
-  scene.physics.resume();
-  scene.state.phase = 'playing';
-}
-
-function returnToStart(scene) {
-  scene.state.winner = null;
-  scene.state.nameEntry.letters = [];
-  scene.endGame.container.setVisible(false);
-  refreshLeaderboard(scene);
-  showStartScreen(scene);
-}
-
-function configurePaddleBody(body) {
-  body.setImmovable(true);
-  body.allowGravity = false;
-  body.setCollideWorldBounds(false);
-}
-
-function createBall(scene, x, y, color, startingOwner) {
-  const ball = scene.add.circle(x, y, 7, color, 1);
-  scene.physics.add.existing(ball);
-
-  ball.body.setCircle(7);
-  ball.body.setBounce(1, 1);
-  ball.body.setCollideWorldBounds(false);
-  ball.body.setAllowGravity(false);
-  ball.body.setDrag(0, 0);
-  ball.body.setMaxVelocity(340, 340);
-  ball.glowColor = color;
-  ball.lastTouchedBy = startingOwner;
-  ball.ghostFor = { p1: false, p2: false };
-  ball.previousY = y;
-
-  return ball;
-}
-
-function buildTextBricks(scene) {
-  scene.playfield.bricks.clear(true, true);
-
-  // The bricks spell CDMX — one big word, letters placed by hand.
-  // Grid 34×28: brickX = 69 + col*20, brickY = 137 + row*12.
-  const brickData = [
-    // C
-    [89,233,1],[109,233,2],[129,233,3],[149,233,0],[169,233,1],
-    [69,245,1],[89,245,2],[169,245,2],[189,245,3],[69,257,2],
-    [89,257,3],[69,269,3],[89,269,0],[69,281,0],[89,281,1],
-    [69,293,1],[89,293,2],[69,305,2],[89,305,3],[69,317,3],
-    [89,317,0],[69,329,0],[89,329,1],[69,341,1],[89,341,2],
-    [169,341,2],[189,341,3],[89,353,3],[109,353,0],[129,353,1],
-    [149,353,2],[169,353,3],
-    // D
-    [249,233,1],[269,233,2],[289,233,3],[309,233,0],[329,233,1],
-    [249,245,2],[269,245,3],[329,245,2],[349,245,3],[249,257,3],
-    [269,257,0],[349,257,0],[369,257,1],[249,269,0],[269,269,1],
-    [349,269,1],[369,269,2],[249,281,1],[269,281,2],[349,281,2],
-    [369,281,3],[249,293,2],[269,293,3],[349,293,3],[369,293,0],
-    [249,305,3],[269,305,0],[349,305,0],[369,305,1],[249,317,0],
-    [269,317,1],[349,317,1],[369,317,2],[249,329,1],[269,329,2],
-    [349,329,2],[369,329,3],[249,341,2],[269,341,3],[329,341,2],
-    [349,341,3],[249,353,3],[269,353,0],[289,353,1],[309,353,2],
-    [329,353,3],
-    // M
-    [429,233,2],[449,233,3],[529,233,3],[549,233,0],[429,245,3],
-    [449,245,0],[469,245,1],[509,245,3],[529,245,0],[549,245,1],
-    [429,257,0],[449,257,1],[489,257,3],[529,257,1],[549,257,2],
-    [429,269,1],[449,269,2],[489,269,0],[529,269,2],[549,269,3],
-    [429,281,2],[449,281,3],[529,281,3],[549,281,0],[429,293,3],
-    [449,293,0],[529,293,0],[549,293,1],[429,305,0],[449,305,1],
-    [529,305,1],[549,305,2],[429,317,1],[449,317,2],[529,317,2],
-    [549,317,3],[429,329,2],[449,329,3],[529,329,3],[549,329,0],
-    [429,341,3],[449,341,0],[529,341,0],[549,341,1],[429,353,0],
-    [449,353,1],[529,353,1],[549,353,2],
-    // X
-    [609,233,3],[629,233,0],[709,233,0],[729,233,1],[629,245,1],
-    [649,245,2],[689,245,0],[709,245,1],[629,257,2],[649,257,3],
-    [689,257,1],[709,257,2],[649,269,0],[669,269,1],[689,269,2],
-    [649,281,1],[669,281,2],[689,281,3],[669,293,3],[649,305,3],
-    [669,305,0],[689,305,1],[649,317,0],[669,317,1],[689,317,2],
-    [629,329,0],[649,329,1],[689,329,3],[709,329,0],[629,341,1],
-    [649,341,2],[689,341,0],[709,341,1],[609,353,1],[629,353,2],
-    [709,353,2],[729,353,3],
-  ];
-
-  const colors = [COLORS.brickA, COLORS.brickB, COLORS.brickC, COLORS.brickD];
-
-  for (const [bx, by, ci] of brickData) {
-    const brick = scene.add.rectangle(bx, by, 18, 10, colors[ci], 1);
-    brick.setStrokeStyle(1, COLORS.cell, 0.7);
-    scene.physics.add.existing(brick, true);
-    scene.playfield.bricks.add(brick);
-  }
-
-  scene.state.remainingBricks = scene.playfield.bricks.countActive(true);
-}
-
-function resetBalls(scene) {
-  const [topBall, bottomBall] = scene.playfield.balls;
-
-  topBall.setPosition(GAME_WIDTH / 2 - 110, 170);
-  bottomBall.setPosition(GAME_WIDTH / 2 + 110, GAME_HEIGHT - 170);
-
-  topBall.lastTouchedBy = 'p1';
-  bottomBall.lastTouchedBy = 'p2';
-  topBall.ghostFor = { p1: false, p2: false };
-  bottomBall.ghostFor = { p1: false, p2: false };
-  topBall.previousY = topBall.y;
-  bottomBall.previousY = bottomBall.y;
-  topBall.setAlpha(1);
-  bottomBall.setAlpha(1);
-
-  topBall.body.setVelocity(190, 210);
-  bottomBall.body.setVelocity(-190, -210);
-}
-
-function updatePaddles(scene, delta, time) {
-  const paddleSpeed = 320;
-  const dashSpeed = 1500;
-  const dashDuration = 110;
-  const dashCooldown = 750;
-  const p1Body = scene.playfield.p1Paddle.body;
-  const p2Body = scene.playfield.p2Paddle.body;
-  const deltaSeconds = delta / 1000;
-
-  let p1Dir = 0;
-  if (isControlHeld(scene, 'P1_L')) p1Dir -= 1;
-  if (isControlHeld(scene, 'P1_R')) p1Dir += 1;
-
-  let p2Dir = 0;
-  if (isControlHeld(scene, 'P2_L')) p2Dir -= 1;
-  if (isControlHeld(scene, 'P2_R')) p2Dir += 1;
-
-  tryStartDash(scene, 'p1', 'P1_1', p1Dir, time, dashDuration, dashCooldown);
-  tryStartDash(scene, 'p2', 'P2_1', p2Dir, time, dashDuration, dashCooldown);
-
-  let p1Velocity = p1Dir * paddleSpeed;
-  let p2Velocity = p2Dir * paddleSpeed;
-
-  if (time < scene.state.dash.p1.activeUntil) {
-    p1Velocity = scene.state.dash.p1.dir * dashSpeed;
-  }
-  if (time < scene.state.dash.p2.activeUntil) {
-    p2Velocity = scene.state.dash.p2.dir * dashSpeed;
-  }
-
-  p1Body.setVelocityX(0);
-  p2Body.setVelocityX(0);
-
-  scene.playfield.p1Paddle.setX(
-    Phaser.Math.Clamp(
-      scene.playfield.p1Paddle.x + p1Velocity * deltaSeconds,
-      110,
-      GAME_WIDTH - 110,
-    ),
-  );
-  scene.playfield.p2Paddle.setX(
-    Phaser.Math.Clamp(
-      scene.playfield.p2Paddle.x + p2Velocity * deltaSeconds,
-      110,
-      GAME_WIDTH - 110,
-    ),
-  );
-
-  if (typeof p1Body.updateFromGameObject === 'function') {
-    p1Body.updateFromGameObject();
-  }
-  if (typeof p2Body.updateFromGameObject === 'function') {
-    p2Body.updateFromGameObject();
-  }
-}
-
-function tryStartDash(scene, playerKey, buttonCode, dir, time, duration, cooldown) {
-  if (!scene.controls.pressed[buttonCode]) return;
-  scene.controls.pressed[buttonCode] = false;
-  if (dir === 0) return;
-  const dashState = scene.state.dash[playerKey];
-  if (time < dashState.cooldownUntil) return;
-  dashState.dir = dir;
-  dashState.activeUntil = time + duration;
-  dashState.cooldownUntil = time + cooldown;
-  playSound(scene, 'dash');
-  spawnDashTrail(scene, playerKey, dir);
-}
-
-function spawnDashTrail(scene, playerKey, dir) {
-  const paddle =
-    playerKey === 'p1' ? scene.playfield.p1Paddle : scene.playfield.p2Paddle;
-  const color = playerKey === 'p1' ? COLORS.p1 : COLORS.p2;
-  const trail = scene.add.rectangle(paddle.x, paddle.y, paddle.width, paddle.height, color, 0.6);
-  scene.tweens.add({
-    targets: trail,
-    x: paddle.x - dir * 50,
-    alpha: 0,
-    scaleX: 0.4,
-    duration: 260,
-    onComplete: () => trail.destroy(),
-  });
-}
-
-function updateBallGhostStates(scene) {
-  const topLine = scene.playfield.p1Paddle.y;
-  const bottomLine = scene.playfield.p2Paddle.y;
-
-  for (const ball of scene.playfield.balls) {
-    const previousY = typeof ball.previousY === 'number' ? ball.previousY : ball.y;
-    const currentY = ball.y;
-
-    if (!ball.ghostFor.p1 && previousY >= topLine && currentY < topLine) {
-      ball.ghostFor.p1 = true;
-      animatePenaltyCounter(scene, 'p1');
-      playSound(scene, 'penalty');
-    } else if (ball.ghostFor.p1 && previousY <= topLine && currentY > topLine) {
-      ball.ghostFor.p1 = false;
-    }
-
-    if (!ball.ghostFor.p2 && previousY <= bottomLine && currentY > bottomLine) {
-      ball.ghostFor.p2 = true;
-      animatePenaltyCounter(scene, 'p2');
-      playSound(scene, 'penalty');
-    } else if (
-      ball.ghostFor.p2 &&
-      previousY >= bottomLine &&
-      currentY < bottomLine
-    ) {
-      ball.ghostFor.p2 = false;
-    }
-
-    ball.setAlpha(ball.ghostFor.p1 || ball.ghostFor.p2 ? 0.45 : 1);
-    ball.previousY = currentY;
-  }
-}
-
-function checkBallEscape(scene) {
-  for (const ball of scene.playfield.balls) {
-    const escaped =
-      !isFinite(ball.x) || !isFinite(ball.y) ||
-      ball.x < 10 || ball.x > GAME_WIDTH - 10 ||
-      ball.y < 10 || ball.y > GAME_HEIGHT - 10;
-    if (!escaped) {
-      continue;
-    }
-    // Ball slipped out — respawn it near centre heading toward the field
-    const vy = ball.lastTouchedBy === 'p1' ? 220 : -220;
-    const vx = Phaser.Math.Between(-160, 160);
-    ball.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2);
-    ball.ghostFor = { p1: false, p2: false };
-    ball.previousY = GAME_HEIGHT / 2;
-    ball.setAlpha(1);
-    ball.body.setVelocity(vx, vy);
-  }
-}
-
-function canBallCollideWithPaddle(ball, playerKey) {
-  return ball.active && !ball.ghostFor?.[playerKey];
-}
-
-function updateBallTrails(scene, time) {
-  if (time % 3 > 1) {
-    return;
-  }
-
-  for (const ball of scene.playfield.balls) {
-    const trail = scene.add.circle(ball.x, ball.y, 4, ball.glowColor, 0.2);
-    scene.playfield.ballTrails.add(trail);
-
-    scene.tweens.add({
-      targets: trail,
-      alpha: 0,
-      scaleX: 0.2,
-      scaleY: 0.2,
-      duration: 250,
-      onComplete: () => trail.destroy(),
-    });
-  }
-}
-
-function handleBallPaddleCollision(scene, ball, paddle, playerKey) {
-  ball.lastTouchedBy = playerKey;
-  const ballColor = playerKey === 'p1' ? COLORS.p1 : COLORS.p2;
-  ball.setFillStyle(ballColor);
-  ball.glowColor = ballColor;
-
-  const offset = (ball.x - paddle.x) / (paddle.width / 2);
-  const currentSpeed = Math.min(ball.body.velocity.length() + 8, 330);
-  const horizontalVelocity = Phaser.Math.Clamp(offset * 220, -220, 220);
-  const verticalDirection = paddle === scene.playfield.p1Paddle ? 1 : -1;
-  const verticalVelocity = Math.max(120, Math.sqrt(currentSpeed * currentSpeed - horizontalVelocity * horizontalVelocity));
-
-  ball.body.setVelocity(horizontalVelocity, verticalVelocity * verticalDirection);
-}
-
-function handleBallBrickCollision(scene, ball, brick) {
-  if (!brick.active) {
-    return;
-  }
-
-  const brickX = brick.x;
-  const brickY = brick.y;
-  const brickHalfWidth = brick.width / 2;
-  const brickHalfHeight = brick.height / 2;
-  const deltaX = ball.x - brickX;
-  const deltaY = ball.y - brickY;
-  const normalizedX = Math.abs(deltaX) / Math.max(brickHalfWidth, 1);
-  const normalizedY = Math.abs(deltaY) / Math.max(brickHalfHeight, 1);
-  const speedX = Math.abs(ball.body.velocity.x);
-  const speedY = Math.abs(ball.body.velocity.y);
-
-  if (normalizedX > normalizedY) {
-    ball.body.setVelocityX((deltaX >= 0 ? 1 : -1) * Math.max(speedX, 150));
-    ball.setX(
-      brickX +
-        (deltaX >= 0 ? 1 : -1) * (brickHalfWidth + ball.width / 2 + 1),
-    );
-  } else {
-    ball.body.setVelocityY((deltaY >= 0 ? 1 : -1) * Math.max(speedY, 150));
-    ball.setY(
-      brickY +
-        (deltaY >= 0 ? 1 : -1) * (brickHalfHeight + ball.height / 2 + 1),
-    );
-  }
-
-  if (typeof ball.body.updateFromGameObject === 'function') {
-    ball.body.updateFromGameObject();
-  }
-
-  if (brick.body) {
-    brick.body.enable = false;
-  }
-  scene.playfield.bricks.remove(brick);
-  brick.destroy();
-  scene.state.remainingBricks -= 1;
-
-  if (ball.lastTouchedBy === 'p1') {
-    scene.state.scores.p1 += 1;
-  } else if (ball.lastTouchedBy === 'p2') {
-    scene.state.scores.p2 += 1;
-  }
-
-  spawnBrickBurst(scene, brick.x, brick.y, brick.fillColor);
-  playSound(scene, 'brick');
-  refreshHud(scene);
-  maybeFinishMatch(scene);
-}
-
-function startAmbientMusic(scene) {
-  if (scene.state.musicStarted) {
-    return;
-  }
-  scene.state.musicStarted = true;
-
-  try {
-    const ctx = scene.sound.context;
-    if (!ctx) {
-      return;
-    }
-
-    // Master output
-    const out = ctx.createGain();
-    out.gain.value = 0.18;
-    out.connect(ctx.destination);
-
-    // Feedback delay for space/depth
-    const dly  = ctx.createDelay(2);
-    const dlFb = ctx.createGain();
-    dly.delayTime.value = 0.48;
-    dlFb.gain.value = 0.28;
-    dly.connect(dlFb);
-    dlFb.connect(dly);
-    dlFb.connect(out);
-
-    // Pad — Am7 chord (A2 C3 E3 G3) through chorused detuned oscs + LP filter
-    const padFilt = ctx.createBiquadFilter();
-    padFilt.type = 'lowpass';
-    padFilt.frequency.value = 800;
-    padFilt.Q.value = 1.4;
-    padFilt.connect(out);
-    padFilt.connect(dly);
-
-    // Very slow LFO sweeps the filter cutoff for movement
-    const lfo  = ctx.createOscillator();
-    const lfoG = ctx.createGain();
-    lfo.frequency.value = 0.055;
-    lfoG.gain.value = 430;
-    lfo.connect(lfoG);
-    lfoG.connect(padFilt.frequency);
-    lfo.start();
-
-    [
-      [110, 0, 'sawtooth'], [110, 11, 'sawtooth'], [110, -11, 'sawtooth'],
-      [130.81, 0, 'triangle'], [164.81, 5, 'triangle'], [196, -4, 'triangle'],
-    ].forEach(([f, d, type]) => {
-      const osc = ctx.createOscillator();
-      const g   = ctx.createGain();
-      osc.type = type;
-      osc.frequency.value = f;
-      osc.detune.value = d;
-      g.gain.value = 0.028;
-      osc.connect(g);
-      g.connect(padFilt);
-      osc.start();
-    });
-
-    // Arp — A minor pentatonic, up and back down
-    const ARP  = [220, 261.63, 293.66, 329.63, 392, 440, 392, 329.63, 293.66, 261.63];
-    const STEP = 0.43;
-    const ALEN = ARP.length * STEP;
-
-    function scheduleArp(t0) {
-      ARP.forEach((freq, i) => {
-        const t   = t0 + i * STEP;
-        const osc = ctx.createOscillator();
-        const g   = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.value = freq;
-        osc.connect(g);
-        g.connect(out);
-        g.connect(dly);
-        g.gain.setValueAtTime(0.001, t);
-        g.gain.linearRampToValueAtTime(0.048, t + 0.018);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + STEP * 0.65);
-        osc.start(t);
-        osc.stop(t + STEP * 0.72);
-      });
-      scene.time.delayedCall((ALEN - 0.06) * 1000, () => scheduleArp(t0 + ALEN));
-    }
-
-    // Sub-bass pulse on the beat (55 Hz sine, 120 bpm)
-    const BEAT = 1.0;
-    function scheduleBass(t) {
-      const osc = ctx.createOscillator();
-      const g   = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 55;
-      osc.connect(g);
-      g.connect(out);
-      g.gain.setValueAtTime(0.28, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-      osc.start(t);
-      osc.stop(t + 0.55);
-      scene.time.delayedCall(BEAT * 1000, () => scheduleBass(t + BEAT));
-    }
-
-    // Short high-pitched digital tick — every half-beat, offset for syncopation
-    const TICK = 0.5;
-    function scheduleTick(t) {
-      const osc = ctx.createOscillator();
-      const g   = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 1320;
-      osc.connect(g);
-      g.connect(out);
-      g.gain.setValueAtTime(0.028, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.02);
-      osc.start(t);
-      osc.stop(t + 0.025);
-      scene.time.delayedCall(TICK * 1000, () => scheduleTick(t + TICK));
-    }
-
-    const t0 = ctx.currentTime + 0.3;
-    scheduleArp(t0);
-    scheduleBass(t0);
-    scheduleTick(t0 + 0.25);
-  } catch (_) {}
-}
-
-function playSound(scene, type) {
-  try {
-    const ctx = scene.sound && scene.sound.context ? scene.sound.context : new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    const now = ctx.currentTime;
-    if (type === 'brick') {
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.exponentialRampToValueAtTime(440, now + 0.08);
-      gain.gain.setValueAtTime(0.18, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-      osc.start(now);
-      osc.stop(now + 0.1);
-    } else if (type === 'penalty') {
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(300, now);
-      osc.frequency.exponentialRampToValueAtTime(80, now + 0.35);
-      gain.gain.setValueAtTime(0.28, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
-      osc.start(now);
-      osc.stop(now + 0.38);
-    } else if (type === 'click') {
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(1200, now);
-      osc.frequency.exponentialRampToValueAtTime(600, now + 0.04);
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-      osc.start(now);
-      osc.stop(now + 0.05);
-    } else if (type === 'dash') {
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(180, now);
-      osc.frequency.exponentialRampToValueAtTime(900, now + 0.12);
-      gain.gain.setValueAtTime(0.22, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-      osc.start(now);
-      osc.stop(now + 0.18);
-    } else if (type === 'select') {
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(700, now);
-      osc.frequency.exponentialRampToValueAtTime(1400, now + 0.08);
-      gain.gain.setValueAtTime(0.12, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-      osc.start(now);
-      osc.stop(now + 0.1);
-    }
-  } catch (_) {}
-}
-
-function spawnBrickBurst(scene, x, y, color) {
-  for (let index = 0; index < 6; index += 1) {
-    const particle = scene.add.rectangle(x, y, 4, 4, color, 1);
-    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    const distance = Phaser.Math.Between(16, 42);
-
-    scene.tweens.add({
-      targets: particle,
-      x: x + Math.cos(angle) * distance,
-      y: y + Math.sin(angle) * distance,
-      alpha: 0,
-      angle: Phaser.Math.Between(-90, 90),
-      duration: Phaser.Math.Between(180, 320),
-      onComplete: () => particle.destroy(),
-    });
-  }
-}
-
-function refreshHud(scene) {
-  scene.hud.p1Score.setText(`P1 ${String(scene.state.scores.p1).padStart(2, '0')}`);
-  scene.hud.p2Score.setText(`P2 ${String(scene.state.scores.p2).padStart(2, '0')}`);
-  scene.hud.remaining.setText(`BRICKS ${String(scene.state.remainingBricks).padStart(3, '0')}`);
-}
-
-function animatePenaltyCounter(scene, playerKey) {
-  const text =
-    playerKey === 'p1' ? scene.hud.p1Score : scene.hud.p2Score;
-  const baseColor =
-    playerKey === 'p1'
-      ? scene.hud.scoreColors.p1
-      : scene.hud.scoreColors.p2;
-
-  scene.tweens.killTweensOf(text);
-  text.setColor(scene.hud.scoreColors.penalty);
-  text.setScale(1);
-  text.setAngle(0);
-
-  scene.tweens.add({
-    targets: text,
-    scaleX: 1.12,
-    scaleY: 1.12,
-    angle: playerKey === 'p1' ? -6 : 6,
-    duration: 90,
-    yoyo: true,
-    repeat: 1,
-    onComplete: () => {
-      text.setColor(baseColor);
-      text.setScale(1);
-      text.setAngle(0);
-    },
-  });
-}
-
-function maybeFinishMatch(scene) {
-  const { p1, p2 } = scene.state.scores;
-  const remaining = scene.state.remainingBricks;
-  const leaderScore = Math.max(p1, p2);
-  const trailingScore = Math.min(p1, p2);
-
-  if (remaining === 0 || leaderScore >= trailingScore + remaining) {
-    finishMatch(scene);
-  }
-}
-
-function finishMatch(scene) {
-  if (scene.state.phase !== 'playing') {
-    return;
-  }
-
-  scene.state.phase = 'gameover';
-  scene.physics.pause();
-  scene.hud.status.setText('');
-
-  const p1 = scene.state.scores.p1;
-  const p2 = scene.state.scores.p2;
-  const isTie = p1 === p2;
-
-  scene.state.winner = isTie ? 'draw' : p1 > p2 ? 'p1' : 'p2';
-  scene.state.winnerLabel =
-    scene.state.winner === 'p1'
-      ? 'PLAYER 1'
-      : scene.state.winner === 'p2'
-        ? 'PLAYER 2'
-        : 'DRAW';
-
-  scene.endGame.container.setVisible(true);
-  scene.endGame.summary.setText(
-    isTie
-      ? `${p1}  :  ${p2}`
-      : `${scene.state.winnerLabel}  ${Math.max(p1, p2)}  :  ${Math.min(p1, p2)}`,
-  );
-  scene.endGame.nameLabel.setText(
-    isTie ? 'DRAW TAG' : 'INITIALS',
-  );
-  scene.endGame.saveStatus.setText(scene.state.saveStatus);
-
-  scene.state.nameEntry.row = 0;
-  scene.state.nameEntry.col = 0;
-  scene.state.nameEntry.moveCooldownUntil = 0;
-  scene.state.nameEntry.confirmCooldownUntil = 0;
-  scene.state.nameEntry.lastMoveVector = { x: 0, y: 0 };
-  refreshNameEntry(scene);
-  updateLetterGridHighlight(scene);
-}
-
-function handleNameEntry(scene, time) {
-  const axisX = getHorizontalMenuAxis(scene.controls);
-  const axisY = getVerticalMenuAxis(scene.controls);
-  const entry = scene.state.nameEntry;
-
-  if (
-    time >= entry.moveCooldownUntil &&
-    (axisX !== 0 || axisY !== 0) &&
-    (entry.lastMoveVector.x !== axisX || entry.lastMoveVector.y !== axisY)
-  ) {
-    moveLetterSelection(scene, axisX, axisY);
-    entry.moveCooldownUntil = time + 160;
-    playSound(scene, 'click');
-  }
-
-  if (axisX === 0 && axisY === 0) {
-    entry.lastMoveVector = { x: 0, y: 0 };
-  } else {
-    entry.lastMoveVector = { x: axisX, y: axisY };
-  }
-
-  if (
-    time >= entry.confirmCooldownUntil &&
-    consumeAnyPressedControl(scene, ['P1_1', 'P2_1', 'P1_2', 'P2_2', 'START1', 'START2'])
-  ) {
-    entry.confirmCooldownUntil = time + 180;
-    playSound(scene, 'select');
-    activateCurrentLetter(scene);
-  }
-}
-
-function getHorizontalMenuAxis(controls) {
-  let axis = 0;
-  if (controls.held.P1_L || controls.held.P2_L) {
-    axis -= 1;
-  }
-  if (controls.held.P1_R || controls.held.P2_R) {
-    axis += 1;
-  }
-  return Phaser.Math.Clamp(axis, -1, 1);
-}
-
-function getVerticalMenuAxis(controls) {
-  let axis = 0;
-  if (controls.held.P1_U || controls.held.P2_U) {
-    axis -= 1;
-  }
-  if (controls.held.P1_D || controls.held.P2_D) {
-    axis += 1;
-  }
-  return Phaser.Math.Clamp(axis, -1, 1);
-}
-
 function normalizeIncomingKey(key) {
-  if (typeof key !== 'string' || key.length === 0) {
-    return '';
-  }
-
-  if (key === ' ') {
-    return 'space';
-  }
-
+  if (typeof key !== 'string' || key.length === 0) return '';
+  if (key === ' ') return 'space';
   return key.toLowerCase();
 }
 
 function isControlHeld(scene, controlCode) {
   return scene.controls.held[controlCode] === true;
+}
+
+function consumePressed(scene, controlCode) {
+  if (scene.controls.pressed[controlCode]) {
+    scene.controls.pressed[controlCode] = false;
+    return true;
+  }
+  return false;
 }
 
 function consumeAnyPressedControl(scene, controlCodes) {
@@ -1558,144 +1311,27 @@ function consumeAnyPressedControl(scene, controlCodes) {
       return true;
     }
   }
-
   return false;
 }
 
-function moveLetterSelection(scene, axisX, axisY) {
-  const entry = scene.state.nameEntry;
-
-  if (axisY !== 0) {
-    entry.row = Phaser.Math.Wrap(entry.row + axisY, 0, LETTER_GRID.length);
-    entry.col = Math.min(entry.col, LETTER_GRID[entry.row].length - 1);
-  }
-
-  if (axisX !== 0) {
-    entry.col = Phaser.Math.Wrap(entry.col + axisX, 0, LETTER_GRID[entry.row].length);
-  }
-
-  updateLetterGridHighlight(scene);
-}
-
-function updateLetterGridHighlight(scene) {
-  const entry = scene.state.nameEntry;
-  for (const item of scene.endGame.gridLabels) {
-    const active = item.row === entry.row && item.col === entry.col;
-    item.cell.setFillStyle(active ? COLORS.accent : COLORS.cell, active ? 1 : 0.95);
-    item.cell.setStrokeStyle(2, active ? COLORS.white : COLORS.frame, active ? 1 : 0.8);
-    item.label.setColor(active ? '#04110b' : '#f7ffd8');
-  }
-}
-
-function activateCurrentLetter(scene) {
-  const entry = scene.state.nameEntry;
-  const selectedValue = LETTER_GRID[entry.row][entry.col];
-
-  if (selectedValue === 'DEL') {
-    entry.letters.pop();
-    refreshNameEntry(scene);
-    return;
-  }
-
-  if (selectedValue === 'END') {
-    if (entry.letters.length === 0) {
-      scene.endGame.saveStatus.setText('Pick at least one character before saving.');
-      return;
-    }
-
-    submitHighScore(scene);
-    return;
-  }
-
-  if (entry.letters.length >= WINNING_NAME_LENGTH) {
-    entry.letters.shift();
-  }
-
-  entry.letters.push(selectedValue);
-  refreshNameEntry(scene);
-}
-
-function refreshNameEntry(scene) {
-  const letters = scene.state.nameEntry.letters.slice();
-  while (letters.length < WINNING_NAME_LENGTH) {
-    letters.push('_');
-  }
-  scene.endGame.nameValue.setText(letters.join(' '));
-}
-
-function submitHighScore(scene) {
-  if (scene.state.phase !== 'gameover') {
-    return;
-  }
-
-  const initials = scene.state.nameEntry.letters.join('').slice(0, WINNING_NAME_LENGTH) || '???';
-  const winningScore =
-    scene.state.winner === 'p1'
-      ? scene.state.scores.p1
-      : scene.state.winner === 'p2'
-        ? scene.state.scores.p2
-        : scene.state.scores.p1;
-
-  const entry = {
-    name: initials,
-    winner: scene.state.winnerLabel,
-    score: winningScore,
-    detail: `${scene.state.scores.p1}-${scene.state.scores.p2}`,
-    savedAt: new Date().toISOString().slice(0, 10),
-  };
-
-  scene.state.saveStatus = `Saved ${initials}! Press START to play again.`;
-  scene.endGame.saveStatus.setText(scene.state.saveStatus);
-  scene.state.phase = 'saved';
-
-  persistHighScore(entry)
-    .then((nextScores) => {
-      scene.state.highScores = nextScores;
-      refreshLeaderboard(scene);
-    })
-    .catch(() => {
-      scene.state.saveStatus = 'Could not save the score, but the game result stands.';
-      if (scene.state.phase === 'saved') {
-        scene.endGame.saveStatus.setText(scene.state.saveStatus);
-      }
-    });
-}
-
-function refreshLeaderboard(scene) {
-  const lines = scene.state.highScores.length
-    ? scene.state.highScores.map((entry, index) => {
-        const rank = String(index + 1).padStart(2, '0');
-        const score = String(entry.score).padStart(2, '0');
-        return `${rank} ${entry.name.padEnd(3, ' ')} ${score} ${entry.winner}`;
-      })
-    : ['NO SAVED SCORES YET'];
-
-  scene.endGame.leaderboard.setText(lines.join('\n'));
-}
+// =====================================================================
+// Storage (arcade bridge con fallback a localStorage)
+// =====================================================================
 
 async function persistHighScore(entry) {
   const existing = await loadHighScores();
-  const nextScores = existing
+  const next = existing
     .concat(entry)
-    .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-      return left.savedAt < right.savedAt ? 1 : -1;
-    })
-    .slice(0, MAX_HIGH_SCORES);
-
-  await storageSet(STORAGE_KEY, nextScores);
-  return nextScores;
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : (a.savedAt < b.savedAt ? 1 : -1)))
+    .slice(0, MAX_SCORES);
+  await storageSet(STORAGE_KEY, next);
+  return next;
 }
 
 async function loadHighScores() {
   const result = await storageGet(STORAGE_KEY);
-  if (!result.found || !Array.isArray(result.value)) {
-    return [];
-  }
-
-  return result.value.filter(isHighScoreEntry).slice(0, MAX_HIGH_SCORES);
+  if (!result.found || !Array.isArray(result.value)) return [];
+  return result.value.filter(isHighScoreEntry).slice(0, MAX_SCORES);
 }
 
 function isHighScoreEntry(value) {
@@ -1703,25 +1339,19 @@ function isHighScoreEntry(value) {
     value &&
     typeof value === 'object' &&
     typeof value.name === 'string' &&
-    typeof value.winner === 'string' &&
     typeof value.score === 'number' &&
-    typeof value.detail === 'string' &&
+    typeof value.mode === 'string' &&
     typeof value.savedAt === 'string'
   );
 }
 
 function getStorage() {
-  if (window.platanusArcadeStorage) {
-    return window.platanusArcadeStorage;
-  }
-
+  if (window.platanusArcadeStorage) return window.platanusArcadeStorage;
   return {
     async get(key) {
       try {
         const raw = window.localStorage.getItem(key);
-        return raw === null
-          ? { found: false, value: null }
-          : { found: true, value: JSON.parse(raw) };
+        return raw === null ? { found: false, value: null } : { found: true, value: JSON.parse(raw) };
       } catch {
         return { found: false, value: null };
       }
@@ -1729,13 +1359,8 @@ function getStorage() {
     async set(key, value) {
       window.localStorage.setItem(key, JSON.stringify(value));
     },
-};
+  };
 }
 
-async function storageGet(key) {
-  return getStorage().get(key);
-}
-
-async function storageSet(key, value) {
-  return getStorage().set(key, value);
-}
+async function storageGet(key) { return getStorage().get(key); }
+async function storageSet(key, value) { return getStorage().set(key, value); }
