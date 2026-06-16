@@ -9,8 +9,7 @@ const W = 800;
 const H = 600;
 const SPLIT_W = 400; // ancho de cada mitad en 2 jugadores
 const FULL_W = 800; // ancho de campo en 1 jugador
-
-// MODIFICADO: eliminado FIELD2_OFFSET, ahora ambos jugadores comparten el mismo mundo
+const FIELD2_OFFSET = 4000; // separación en coordenadas de mundo entre los dos campos
 
 const STORAGE_KEY = "ducks-sky-jump-highscores";
 const MAX_SCORES = 5;
@@ -19,7 +18,7 @@ const MAX_SCORES = 5;
 const GRAVITY = 1900;
 const MOVE_SPEED = 380;
 const JUMP_V = 940;
-const SPRING_V = 1560;
+const SPRING_V = 1180; // resorte: impulso más moderado para no estamparse contra obstáculos
 const IMPULSE_V = 820;
 const IMPULSE_CD = 1400;
 const MAX_FALL = 1500;
@@ -36,10 +35,6 @@ const FALL_GRACE_MS = 3000;
 const START_LIVES = 3;
 const POOL = 14;
 const HAZARDS = 5;
-
-// MODIFICADO: añadido parámetro para fuerza de empuje entre jugadores
-const PUSH_FORCE = 400;
-const PUSH_UP_FORCE = 300;
 
 const COLORS = {
   sky: 0x0a1130,
@@ -60,14 +55,8 @@ const COLORS = {
 // =====================================================================
 // PERSONAJES
 // ---------------------------------------------------------------------
-// Para usar el PIXEL ART de tu compañero:
-//   1. Convierte cada PNG a base64 (data URI). Ej. en la terminal:
-//        base64 -w0 personaje.png    (o una web "png to base64")
-//   2. Pega el resultado en el campo `data` con el prefijo data:image/png;base64,
-//        { key: 'c_orador', name: 'EL ORADOR', data: 'data:image/png;base64,iVBORw0...' }
-//   3. Si un personaje tiene `data`, se carga ese PNG; si no, se dibuja uno
-//      procedural de respaldo con `color`/`sash`/`hair`.
-//   (Recomendado: sprites ~44x62 px o múltiplos; se escalan a esa altura.)
+// Para usar PIXEL ART: en el campo `data` pega el base64 con '/' cambiado por '!'
+// y envuélvelo con charImage("..."). Si `data` es null, se dibuja uno procedural.
 // =====================================================================
 // Reconstruye un data URI base64; '!' representa '/' para no disparar el patron // del validador.
 function charImage(b64) {
@@ -75,38 +64,10 @@ function charImage(b64) {
 }
 
 const CHARACTERS = [
-  {
-    key: "c_adame",
-    name: "ALFREDO ADAME",
-    color: 0xffffff, // Gi
-    sash: 0x000000, // Black belt
-    hair: 0xcccccc,
-    data: null,
-  },
-  {
-    key: "c_abelito",
-    name: "ABELITO",
-    color: 0xff3333, // Red shirt
-    sash: 0x3333ff, // Blue shorts
-    hair: 0x3a1d1d,
-    data: null,
-  },
-  {
-    key: "c_claudia",
-    name: "CLAUDIA SHEMABUI",
-    color: 0x4d1d3d, // Guinda suit
-    sash: 0xffffff,
-    hair: 0x111111,
-    data: null,
-  },
-  {
-    key: "c_simi",
-    name: "DR SIMI",
-    color: 0xffffff, // White coat
-    sash: 0x3366ff, // Blue tie
-    hair: 0xffffff, // Bald/white hair
-    data: null,
-  },
+  { key: "c_adame", name: "ALFREDO ADAME", color: 0xffffff, sash: 0x000000, hair: 0xcccccc, data: null },
+  { key: "c_abelito", name: "ABELITO", color: 0xff3333, sash: 0x3333ff, hair: 0x3a1d1d, data: null },
+  { key: "c_claudia", name: "CLAUDIA SHEMABUI", color: 0x4d1d3d, sash: 0xffffff, hair: 0x111111, data: null },
+  { key: "c_simi", name: "DR SIMI", color: 0xffffff, sash: 0x3366ff, hair: 0xffffff, data: null },
 ];
 
 const CHAR_GRID_W = 16;
@@ -173,9 +134,7 @@ new Phaser.Game(config);
 
 function preload() {
   for (const c of CHARACTERS) {
-    if (c.data) {
-      this.load.image(c.key, c.data);
-    }
+    if (c.data) this.load.image(c.key, c.data);
   }
 }
 
@@ -184,6 +143,8 @@ function create() {
 
   ensureCharacterTextures(scene);
   ensureMenuBackground(scene);
+  ensureMoneyTexture(scene);
+  ensureCrowdTexture(scene);
 
   scene.state = {
     phase: "start",
@@ -193,16 +154,21 @@ function create() {
     sel: null,
   };
 
+  // segunda cámara para split-screen (oculta hasta jugar a 2P)
+  scene.cam2 = scene.cameras.add(SPLIT_W, 0, SPLIT_W, H);
+  scene.cam2.setVisible(false);
+  scene.cam2.setBackgroundColor(COLORS.sky);
   scene.cameras.main.setBackgroundColor(COLORS.sky);
 
-  // MODIFICADO: solo construimos un campo (el mundo compartido)
-  scene.fields = [buildField(scene, 0, scene.cameras.main)];
+  // dos campos independientes (mundos separados por un offset horizontal)
+  scene.fields = [
+    buildField(scene, 0, 0, scene.cameras.main),
+    buildField(scene, 1, FIELD2_OFFSET, scene.cam2),
+  ];
 
   scene.players = [makePlayer(scene, 0), makePlayer(scene, 1)];
-  // Ambos jugadores comparten el mismo campo
-  scene.players[0].field = scene.fields[0];
-  scene.players[1].field = scene.fields[0];
-  scene.fields[0].players = scene.players;
+  scene.fields[0].player = scene.players[0];
+  scene.fields[1].player = scene.players[1];
 
   createHud(scene);
   createStartScreen(scene);
@@ -210,7 +176,15 @@ function create() {
   createResultsScreen(scene);
   createControls(scene);
 
-  // Ambos HUDs comparten la misma cámara principal.
+  // Reparto de cámaras: cada cámara solo ve lo suyo.
+  scene.cam2.ignore([
+    scene.fields[0].layer,
+    scene.hud.p1.container,
+    scene.startScreen.container,
+    scene.selectScreen.container,
+    scene.resultsScreen.container,
+  ]);
+  scene.cameras.main.ignore([scene.fields[1].layer, scene.hud.p2.container]);
 
   showStartScreen(scene);
 
@@ -248,7 +222,7 @@ function update(time, delta) {
 }
 
 // =====================================================================
-// Texturas de personajes (procedural de respaldo)
+// Texturas de personajes (pixel-art procedural de respaldo)
 // =====================================================================
 
 function ensureCharacterTextures(scene) {
@@ -286,7 +260,6 @@ function drawAdame(g, c) {
   drawCore(g, c);
   drawStandardArms(g, c);
   px(g, 4, 0, 8, 1, c.hair);
-  // Black belt (sash)
   for (let i = 0; i < 8; i++) px(g, 4 + i, 10, 1, 1, c.sash);
 }
 
@@ -294,33 +267,27 @@ function drawAbelito(g, c) {
   drawCore(g, c);
   drawStandardArms(g, c);
   px(g, 3, 0, 10, 2, c.hair);
-  // Shorts (sash color)
   px(g, 3, 11, 10, 4, c.sash);
 }
 
 function drawClaudia(g, c) {
   drawCore(g, c);
   drawStandardArms(g, c);
-  // Hair with ponytail
   px(g, 4, 0, 8, 1, c.hair);
   px(g, 3, 1, 1, 4, c.hair);
   px(g, 12, 1, 1, 4, c.hair);
-  px(g, 13, 3, 2, 6, c.hair); // ponytail
-  // Presidential sash (banda presidencial)
-  for (let i = 0; i < 7; i++) px(g, 4 + i, 7 + i, 1, 1, 0x006847); // Green
-  for (let i = 0; i < 7; i++) px(g, 4 + i, 8 + i, 1, 1, 0xffffff); // White
-  for (let i = 0; i < 7; i++) px(g, 4 + i, 9 + i, 1, 1, 0xce1126); // Red
+  px(g, 13, 3, 2, 6, c.hair);
+  for (let i = 0; i < 7; i++) px(g, 4 + i, 7 + i, 1, 1, 0x006847);
+  for (let i = 0; i < 7; i++) px(g, 4 + i, 8 + i, 1, 1, 0xffffff);
+  for (let i = 0; i < 7; i++) px(g, 4 + i, 9 + i, 1, 1, 0xce1126);
 }
 
 function drawSimi(g, c) {
   drawCore(g, c);
   drawStandardArms(g, c);
-  // Bald / white hair sides
   px(g, 3, 2, 1, 3, c.hair);
   px(g, 12, 2, 1, 3, c.hair);
-  // Mustache
   px(g, 5, 5, 6, 1, 0xffffff);
-  // Blue tie
   px(g, 7, 7, 2, 5, c.sash);
 }
 
@@ -367,13 +334,7 @@ function ensureMenuBackground(scene) {
     g.fillRect(x, y, s, s);
   }
   const plats = [
-    [110, 360],
-    [300, 300],
-    [520, 345],
-    [200, 215],
-    [600, 245],
-    [410, 150],
-    [80, 250],
+    [110, 360], [300, 300], [520, 345], [200, 215], [600, 245], [410, 150], [80, 250],
   ];
   for (const p of plats) {
     g.fillStyle(0x16264f, 1);
@@ -404,17 +365,65 @@ function ensureMenuBackground(scene) {
   scene.textures.get("menu_bg").setFilter(Phaser.Textures.FilterMode.NEAREST);
 }
 
+// Fajo de dinero (marcador del resorte/trampolín)
+function ensureMoneyTexture(scene) {
+  if (scene.textures.exists("money")) return;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  g.fillStyle(0x2f8f4f, 1);
+  g.fillRect(0, 0, 30, 18);
+  g.lineStyle(2, 0x1c5e33, 1);
+  g.strokeRect(1, 1, 28, 16);
+  g.fillStyle(0x5fbf7f, 1);
+  g.fillEllipse(15, 9, 18, 10);
+  // signo de "$"
+  g.fillStyle(0xffffff, 1);
+  g.fillRect(14, 3, 2, 12);
+  g.fillRect(11, 4, 5, 2);
+  g.fillRect(14, 8, 5, 2);
+  g.fillRect(11, 13, 5, 2);
+  g.generateTexture("money", 30, 18);
+  g.destroy();
+  scene.textures.get("money").setFilter(Phaser.Textures.FilterMode.NEAREST);
+}
+
+// Tile de multitud (la turba que te persigue desde el vacío)
+function ensureCrowdTexture(scene) {
+  if (scene.textures.exists("crowdTile")) return;
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  const heads = [[8, 30], [22, 26], [36, 31], [50, 27], [60, 29]];
+  g.fillStyle(0x140c1a, 1);
+  for (const h of heads) {
+    g.fillCircle(h[0], h[1], 6);
+    g.fillRect(h[0] - 6, h[1] + 4, 12, 44);
+  }
+  // brazos en alto
+  g.lineStyle(3, 0x140c1a, 1);
+  for (const h of heads) {
+    g.beginPath(); g.moveTo(h[0] - 5, h[1] + 6); g.lineTo(h[0] - 10, h[1] - 8); g.strokePath();
+    g.beginPath(); g.moveTo(h[0] + 5, h[1] + 6); g.lineTo(h[0] + 10, h[1] - 8); g.strokePath();
+  }
+  // ojos rojos
+  g.fillStyle(0xff3b3b, 1);
+  for (const h of heads) {
+    g.fillRect(h[0] - 3, h[1] - 1, 2, 2);
+    g.fillRect(h[0] + 1, h[1] - 1, 2, 2);
+  }
+  g.generateTexture("crowdTile", 64, 76);
+  g.destroy();
+  scene.textures.get("crowdTile").setFilter(Phaser.Textures.FilterMode.NEAREST);
+}
+
 // =====================================================================
-// Campo (ahora único, compartido por ambos jugadores)
+// Campo (cada jugador tiene el suyo): plataformas + drones + estrellas
 // =====================================================================
 
-function buildField(scene, index, camera) {
+function buildField(scene, index, originX, camera) {
   const layer = scene.add.container(0, 0);
 
   const stars = [];
   for (let i = 0; i < 16; i++) {
     const s = scene.add.circle(
-      Phaser.Math.Between(0, W),
+      originX + Phaser.Math.Between(0, SPLIT_W),
       Phaser.Math.Between(0, H),
       Phaser.Math.Between(1, 2),
       COLORS.star,
@@ -430,29 +439,24 @@ function buildField(scene, index, camera) {
   const hazards = [];
   for (let i = 0; i < HAZARDS; i++) hazards.push(makeHazard(scene, layer));
 
+  // multitud que persigue desde el vacío (borde inferior)
+  const crowd = scene.add
+    .tileSprite(originX + SPLIT_W / 2, 0, SPLIT_W, 76, "crowdTile")
+    .setOrigin(0.5, 1)
+    .setDepth(9);
+  crowd.setVisible(false);
+  layer.add(crowd);
+
   return {
-    index,
-    camera,
-    layer,
-    stars,
-    platforms,
-    hazards,
-    width: W, // mundo ancho completo
-    players: null,
-    highestY: 0,
-    nextHazardAt: 0,
-    maxHeight: 0,
-    active: false,
+    index, originX, camera, layer, stars, platforms, hazards, crowd,
+    width: SPLIT_W, player: null, hud: null,
+    highestY: 0, nextHazardAt: 0, maxHeight: 0, active: false,
   };
 }
 
 function makePlayer(scene, index) {
-  const field = scene.fields[0]; // todos usan el mismo campo
-  const sprite = scene.add.sprite(
-    0,
-    0,
-    CHARACTERS[index % CHARACTERS.length].key,
-  );
+  const field = scene.fields[index];
+  const sprite = scene.add.sprite(0, 0, CHARACTERS[index % CHARACTERS.length].key);
   sprite.setDisplaySize(CHAR_W, CHAR_H);
   sprite.setDepth(10);
   field.layer.add(sprite);
@@ -463,10 +467,7 @@ function makePlayer(scene, index) {
     sprite,
     field,
     charIndex: index % CHARACTERS.length,
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
+    x: 0, y: 0, vx: 0, vy: 0,
     lives: START_LIVES,
     alive: false,
     grounded: false,
@@ -477,53 +478,30 @@ function makePlayer(scene, index) {
     fallGraceUntil: 0,
     minY: START_Y,
     height: 0,
+    milestone: 100,
+    bScaleX: CHAR_SCALE,
+    bScaleY: CHAR_SCALE,
   };
 }
 
 function makePlatform(scene, layer) {
   const base = scene.add.rectangle(0, 0, PLAT_W, PLAT_H, COLORS.platNormal);
   base.setStrokeStyle(2, 0x05122a, 0.6);
-  const cap = scene.add.rectangle(
-    0,
-    -PLAT_H / 2 + 2,
-    PLAT_W,
-    4,
-    COLORS.white,
-    0.5,
-  );
-  const spring = scene.add.rectangle(0, -PLAT_H / 2 - 6, 22, 10, COLORS.accent);
-  spring.setStrokeStyle(2, 0x05122a, 0.8);
+  const cap = scene.add.rectangle(0, -PLAT_H / 2 + 2, PLAT_W, 4, COLORS.white, 0.5);
+  const spring = scene.add.sprite(0, -PLAT_H / 2 - 7, "money");
   spring.setVisible(false);
   const tBase = scene.add.rectangle(0, -2, 18, 14, COLORS.turret);
   const tBarrel = scene.add.rectangle(-12, -4, 12, 5, COLORS.turret);
   const tLight = scene.add.circle(0, -8, 3, COLORS.turretLight);
-  const turret = scene.add.container(PLAT_W / 2 - 12, -PLAT_H / 2 - 8, [
-    tBase,
-    tBarrel,
-    tLight,
-  ]);
+  const turret = scene.add.container(PLAT_W / 2 - 12, -PLAT_H / 2 - 8, [tBase, tBarrel, tLight]);
   turret.setVisible(false);
   const container = scene.add.container(0, 0, [base, cap, spring, turret]);
   container.setDepth(5);
   layer.add(container);
   return {
-    container,
-    base,
-    cap,
-    spring,
-    turret,
-    tLight,
-    x: 0,
-    y: 0,
-    w: PLAT_W,
-    h: PLAT_H,
-    type: "normal",
-    vx: 0,
-    dx: 0,
-    minX: 0,
-    maxX: 0,
-    hasTurret: false,
-    broken: false,
+    container, base, cap, spring, turret, tLight,
+    x: 0, y: 0, w: PLAT_W, h: PLAT_H, type: "normal",
+    vx: 0, dx: 0, minX: 0, maxX: 0, hasTurret: false, broken: false,
   };
 }
 
@@ -541,16 +519,28 @@ function makeHazard(scene, layer) {
 }
 
 // =====================================================================
-// Cámaras (split-screen sobre el mismo mundo)
+// Cámaras (split-screen)
 // =====================================================================
 
-function setupCameras(scene, twoPlayers) {
-  scene.cameras.main.setViewport(0, 0, FULL_W, H);
+function setupCameras(scene, two) {
+  const main = scene.cameras.main;
+  if (two) {
+    main.setViewport(0, 0, SPLIT_W, H);
+    main.setScroll(scene.fields[0].originX, 0);
+    scene.cam2.setViewport(SPLIT_W, 0, SPLIT_W, H);
+    scene.cam2.setScroll(scene.fields[1].originX, 0);
+    scene.cam2.setVisible(true);
+  } else {
+    main.setViewport(0, 0, FULL_W, H);
+    main.setScroll(scene.fields[0].originX, 0);
+    scene.cam2.setVisible(false);
+  }
 }
 
 function teardownCameras(scene) {
   scene.cameras.main.setViewport(0, 0, FULL_W, H);
   scene.cameras.main.setScroll(0, 0);
+  scene.cam2.setVisible(false);
 }
 
 // =====================================================================
@@ -565,22 +555,17 @@ function startMatch(scene) {
   scene.selectScreen.container.setVisible(false);
   scene.resultsScreen.container.setVisible(false);
 
-  const field = scene.fields[0];
-  field.width = two ? W : W; // siempre el mundo completo
-  field.active = true;
+  scene.fields[0].width = two ? SPLIT_W : FULL_W;
+  scene.fields[1].width = SPLIT_W;
+  scene.fields[0].active = true;
+  scene.fields[1].active = two;
 
   scene.players[0].charIndex = s.sel.p1;
   scene.players[1].charIndex = s.sel.p2;
 
-  resetField(scene, field);
-  if (!two) {
-    // ocultar jugador 2 y su HUD
-    scene.players[1].sprite.setVisible(false);
-    scene.hud.p2.container.setVisible(false);
-  } else {
-    scene.players[1].sprite.setVisible(true);
-    scene.hud.p2.container.setVisible(true);
-  }
+  resetField(scene, scene.fields[0]);
+  if (two) resetField(scene, scene.fields[1]);
+  else hideField(scene.fields[1]);
 
   setupCameras(scene, two);
   refreshHud(scene);
@@ -588,34 +573,30 @@ function startMatch(scene) {
 }
 
 function resetField(scene, field) {
-  const two = scene.state.twoPlayers;
-  const p1 = scene.players[0];
-  const p2 = scene.players[1];
+  const pl = field.player;
+  const left = field.originX;
+  const cx = left + field.width / 2;
 
-  // Posiciones iniciales separadas para evitar colisión inicial
-  const startX1 = field.width * 0.35;
-  const startX2 = field.width * 0.65;
+  setPlayerCharacter(pl, pl.charIndex);
+  pl.alive = true;
+  pl.lives = START_LIVES;
+  pl.vx = 0;
+  pl.vy = 0;
+  pl.x = cx;
+  pl.y = START_Y;
+  pl.grounded = false;
+  pl.platform = null;
+  pl.airImpulse = true;
+  pl.impulseCdUntil = 0;
+  pl.invulnUntil = 0;
+  pl.fallGraceUntil = 0;
+  pl.minY = START_Y;
+  pl.height = 0;
+  pl.milestone = 100;
+  pl.sprite.clearTint();
+  pl.sprite.setVisible(true).setAlpha(1).setRotation(0).setPosition(pl.x, pl.y);
 
-  for (const pl of [p1, p2]) {
-    setPlayerCharacter(pl, pl.charIndex);
-    pl.alive = true;
-    pl.lives = START_LIVES;
-    pl.vx = 0;
-    pl.vy = 0;
-    pl.x = pl.index === 0 ? startX1 : startX2;
-    pl.y = START_Y;
-    pl.grounded = false;
-    pl.platform = null;
-    pl.airImpulse = true;
-    pl.impulseCdUntil = 0;
-    pl.invulnUntil = 0;
-    pl.fallGraceUntil = 0;
-    pl.minY = START_Y;
-    pl.height = 0;
-    pl.sprite.setVisible(true).setAlpha(1).setPosition(pl.x, pl.y);
-  }
-
-  field.camera = scene.cameras.main; // la cámara principal (para efectos de shake)
+  field.camera.setScroll(left, 0);
   field.maxHeight = 0;
   field.nextHazardAt = 0;
   field.highestY = START_Y + 50;
@@ -627,7 +608,7 @@ function resetField(scene, field) {
   ground.w = field.width - 60;
   ground.base.setSize(ground.w, PLAT_H);
   ground.cap.setSize(ground.w, 4);
-  placePlatform(ground, field.width / 2, START_Y + 50);
+  placePlatform(ground, cx, START_Y + 50);
 
   for (let i = 1; i < field.platforms.length; i++) {
     const p = field.platforms[i];
@@ -643,19 +624,28 @@ function resetField(scene, field) {
   }
 
   for (const st of field.stars) {
-    st.x = Phaser.Math.Between(10, field.width - 10);
+    st.x = left + Phaser.Math.Between(10, field.width - 10);
     st.y = Phaser.Math.Between(0, H);
   }
+
+  field.crowd.setVisible(true);
+  field.crowd.setSize(field.width, 76);
+  field.crowd.x = left + field.width / 2;
 }
 
 function hideField(field) {
-  // ya no se usa porque solo hay un campo, pero lo dejamos por compatibilidad
+  field.player.sprite.setVisible(false);
+  for (const p of field.platforms) p.container.setVisible(false);
+  for (const hz of field.hazards) hz.container.setVisible(false);
+  if (field.crowd) field.crowd.setVisible(false);
 }
 
 function setPlayerCharacter(pl, idx) {
   pl.charIndex = idx;
   pl.sprite.setTexture(CHARACTERS[idx].key);
   pl.sprite.setDisplaySize(CHAR_W, CHAR_H);
+  pl.bScaleX = pl.sprite.scaleX;
+  pl.bScaleY = pl.sprite.scaleY;
 }
 
 function placePlatform(p, x, y) {
@@ -669,7 +659,7 @@ function spawnAbove(field, p, heightProgress) {
   const newY = field.highestY - gap;
   field.highestY = newY;
   const m = 50;
-  const x = Phaser.Math.Between(m, field.width - m);
+  const x = Phaser.Math.Between(field.originX + m, field.originX + field.width - m);
   const type = pickPlatformType(heightProgress);
   configurePlatform(p, type, heightProgress);
   placePlatform(p, x, newY);
@@ -725,99 +715,86 @@ function updatePlaying(scene, dt, time) {
     return;
   }
 
-  const field = scene.fields[0];
-  if (field.active) updateField(scene, field, dt, time);
-
-  // Si algún jugador pierde todas sus vidas, termina la partida
-  if (scene.state.twoPlayers) {
-    if (!scene.players[0].alive || !scene.players[1].alive) endMatch(scene);
-  } else {
-    if (!scene.players[0].alive) endMatch(scene);
+  for (const field of scene.fields) {
+    if (field.active) updateField(scene, field, dt, time);
   }
+
+  // La partida termina cuando NINGÚN jugador activo sigue vivo.
+  const anyAlive = scene.fields.some((f) => f.active && f.player.alive);
+  if (!anyAlive) endMatch(scene);
 }
 
 function updateField(scene, field, dt, time) {
-  const two = scene.state.twoPlayers;
+  const pl = field.player;
+  const cam = field.camera;
 
-  // Actualizar plataformas y peligros (una sola vez)
   updatePlatforms(scene, field, dt);
+
+  if (pl.alive) stepPlayer(scene, field, dt, time);
+
+  // cámara: sigue a su jugador, nunca retrocede
+  if (pl.alive) {
+    const desired = pl.y - H * ANCHOR_FROM_TOP;
+    if (desired < cam.scrollY) cam.scrollY = desired;
+  }
+
+  // altura / score
+  if (pl.alive) {
+    if (pl.y < pl.minY) pl.minY = pl.y;
+    pl.height = Math.max(0, Math.floor((START_Y - pl.minY) / 10));
+    if (pl.height > field.maxHeight) field.maxHeight = pl.height;
+    if (pl.height >= pl.milestone) {
+      showMilestone(scene, field, pl.milestone);
+      pl.milestone += 100;
+    }
+  }
+
+  // ambiente: estrellas fugaces ocasionales
+  if (pl.alive && Math.random() < 0.004) shootingStar(scene, field, cam);
+
+  // caída fuera de cámara
+  const bottom = cam.scrollY + H;
+  if (pl.alive && pl.y - P_HALF_H > bottom + 40) {
+    handleFall(scene, field, time);
+  }
+
   updateHazards(scene, field, dt, time);
 
-  // Actualizar cada jugador
-  for (const pl of field.players) {
-    if (pl.alive) stepPlayer(scene, field, pl, dt, time);
-  }
-
-  // Colisiones entre jugadores (si están en 2P y ambos vivos)
-  if (two && field.players[0].alive && field.players[1].alive) {
-    checkPlayerCollision(scene, field, field.players[0], field.players[1]);
-  }
-
-  // Cámaras: una sola cámara sigue al jugador más alto
-  let highestY = Infinity;
-  if (two) {
-    if (field.players[0].alive) highestY = Math.min(highestY, field.players[0].y);
-    if (field.players[1].alive) highestY = Math.min(highestY, field.players[1].y);
-  } else {
-    if (field.players[0].alive) highestY = field.players[0].y;
-  }
-  if (highestY !== Infinity) {
-    const desired = highestY - H * ANCHOR_FROM_TOP;
-    scene.cameras.main.scrollY = Math.min(desired, scene.cameras.main.scrollY);
-  }
-
-  // Actualizar alturas y HUD
-  for (const pl of field.players) {
-    if (pl.alive) {
-      if (pl.y < pl.minY) pl.minY = pl.y;
-      pl.height = Math.max(0, Math.floor((START_Y - pl.minY) / 10));
-      if (pl.height > field.maxHeight) field.maxHeight = pl.height;
+  if (pl.alive) {
+    if (time < pl.invulnUntil) {
+      pl.sprite.setAlpha(Math.floor(time / 90) % 2 === 0 ? 0.35 : 1);
+    } else {
+      pl.sprite.setAlpha(1);
+      pl.sprite.clearTint();
     }
-    refreshFieldHud(scene, pl);
-  }
-
-  // Caídas
-  for (const pl of field.players) {
-    if (!pl.alive) continue;
-    const bottom = scene.cameras.main.scrollY + H;
-    if (pl.y - P_HALF_H > bottom + 40) {
-      handleFall(scene, field, pl, time);
+    if (time >= pl.invulnUntil) {
+      checkTurrets(scene, field, time);
+      checkHazards(scene, field, time);
     }
   }
 
-  // Inmunidad y parpadeo
-  for (const pl of field.players) {
-    if (pl.alive) {
-      if (time < pl.invulnUntil) {
-        pl.sprite.setAlpha(Math.floor(time / 90) % 2 === 0 ? 0.35 : 1);
-      } else {
-        pl.sprite.setAlpha(1);
-      }
-    }
-  }
+  recyclePlatforms(field, cam);
+  recycleStars(field, cam);
 
-  // Torretas y peligros afectan a ambos
-  for (const pl of field.players) {
-    if (pl.alive && time >= pl.invulnUntil) {
-      checkTurrets(scene, field, pl, time);
-      checkHazards(scene, field, pl, time);
-    }
-  }
+  // la multitud sigue el borde inferior de la cámara (con leve vaivén amenazante)
+  field.crowd.y = cam.scrollY + H + 30 + Math.sin(scene.time.now * 0.005) * 5;
+  field.crowd.tilePositionX += 0.3;
 
-  recyclePlatforms(field, scene.cameras.main, scene.cameras.main, two);
-  recycleStars(field, scene.cameras.main, scene.cameras.main, two);
+  refreshFieldHud(scene, field);
 }
 
 function updatePlatforms(scene, field, dt) {
+  const left = field.originX;
+  const right = field.originX + field.width;
   for (const p of field.platforms) {
     p.dx = 0;
     if (p.type === "moving" && !p.broken) {
       let nx = p.x + p.vx * dt;
-      if (nx < 50) {
-        nx = 50;
+      if (nx < left + 50) {
+        nx = left + 50;
         p.vx = Math.abs(p.vx);
-      } else if (nx > field.width - 50) {
-        nx = field.width - 50;
+      } else if (nx > right - 50) {
+        nx = right - 50;
         p.vx = -Math.abs(p.vx);
       }
       p.dx = nx - p.x;
@@ -831,19 +808,21 @@ function updatePlatforms(scene, field, dt) {
 }
 
 function updateHazards(scene, field, dt, time) {
-  const scrollY = scene.cameras.main.scrollY;
+  const cam = field.camera;
+  const left = field.originX;
+  const right = field.originX + field.width;
   for (const hz of field.hazards) {
     if (!hz.active) continue;
     hz.x += hz.vx * dt;
-    if (hz.x < 26) {
-      hz.x = 26;
+    if (hz.x < left + 26) {
+      hz.x = left + 26;
       hz.vx = Math.abs(hz.vx);
-    } else if (hz.x > field.width - 26) {
-      hz.x = field.width - 26;
+    } else if (hz.x > right - 26) {
+      hz.x = right - 26;
       hz.vx = -Math.abs(hz.vx);
     }
     hz.container.setPosition(hz.x, hz.y);
-    if (hz.y > scrollY + H + 60) {
+    if (hz.y > cam.scrollY + H + 60) {
       hz.active = false;
       hz.container.setVisible(false);
     }
@@ -855,16 +834,19 @@ function updateHazards(scene, field, dt, time) {
   const hz = field.hazards.find((e) => !e.active);
   if (!hz) return;
   hz.active = true;
-  hz.x = Phaser.Math.Between(40, field.width - 40);
-  hz.y = scrollY - 30;
+  hz.x = Phaser.Math.Between(left + 40, right - 40);
+  hz.y = cam.scrollY - 30;
   const speed = 70 + Math.min(120, h / 30) + Math.random() * 50;
   hz.vx = Math.random() < 0.5 ? -speed : speed;
   hz.container.setVisible(true).setPosition(hz.x, hz.y);
 }
 
-// MODIFICADO: paso extra 'pl' y 'time' para el efecto de caminar
-function stepPlayer(scene, field, pl, dt, time) {
+function stepPlayer(scene, field, dt, time) {
+  const pl = field.player;
   const held = scene.controls.held;
+  const left = field.originX;
+  const right = field.originX + field.width;
+
   let dir = 0;
   if (held[pl.prefix + "_L"]) dir -= 1;
   if (held[pl.prefix + "_R"]) dir += 1;
@@ -886,9 +868,7 @@ function stepPlayer(scene, field, pl, dt, time) {
     pl.grounded = false;
   }
 
-  // Wrap en el mundo ancho
-  if (pl.x < 0) pl.x = field.width;
-  if (pl.x > field.width) pl.x = 0;
+  pl.x = Phaser.Math.Wrap(pl.x, left, right);
 
   if (pl.grounded && held[pl.prefix + "_U"]) {
     pl.vy = -JUMP_V;
@@ -896,6 +876,7 @@ function stepPlayer(scene, field, pl, dt, time) {
     pl.platform = null;
     pl.airImpulse = true;
     tone(scene, 620, 0.08, 0.12);
+    burst(scene, field, pl.x, pl.y + P_HALF_H, 0xffffff, 5, 16, 360);
   }
 
   if (
@@ -908,27 +889,33 @@ function stepPlayer(scene, field, pl, dt, time) {
     pl.airImpulse = false;
     pl.impulseCdUntil = time + IMPULSE_CD;
     tone(scene, 880, 0.1, 0.12);
+    burst(scene, field, pl.x, pl.y, 0x00e0ff, 7, 24, 380);
   }
 
   if (!pl.grounded) {
     pl.vy += GRAVITY * dt;
     if (pl.vy > MAX_FALL) pl.vy = MAX_FALL;
     pl.y += pl.vy * dt;
-    landingCheck(scene, field, pl);
+    landingCheck(scene, field);
   }
 
   pl.sprite.setPosition(pl.x, pl.y);
 
-  // MODIFICADO: efecto de balanceo al caminar (solo en suelo y moviéndose)
+  // squash & stretch según velocidad vertical (se estira al subir, se aplasta al caer)
+  const sk = Phaser.Math.Clamp(-pl.vy / 4200, -0.16, 0.24);
+  pl.sprite.scaleX = pl.bScaleX * (1 - sk * 0.55);
+  pl.sprite.scaleY = pl.bScaleY * (1 + sk);
+
+  // balanceo al caminar (solo en suelo y moviéndose)
   if (pl.grounded && Math.abs(pl.vx) > 5) {
-    const wobble = Math.sin(time * 0.018) * 0.26; // ±15 grados en radianes
-    pl.sprite.setRotation(wobble);
+    pl.sprite.setRotation(Math.sin(time * 0.018) * 0.26);
   } else {
     pl.sprite.setRotation(0);
   }
 }
 
-function landingCheck(scene, field, pl) {
+function landingCheck(scene, field) {
+  const pl = field.player;
   if (pl.vy < 0) return;
   const feet = pl.y + P_HALF_H;
   for (const p of field.platforms) {
@@ -936,6 +923,7 @@ function landingCheck(scene, field, pl) {
     if (Math.abs(pl.x - p.x) > p.w / 2 + P_HALF_W * 0.7) continue;
     const top = p.y - p.h / 2;
     if (feet >= top && feet <= top + 22 + Math.abs(pl.vy) * 0.016) {
+      const impact = pl.vy;
       if (p.type === "spring") {
         pl.y = top - P_HALF_H;
         pl.vy = -SPRING_V;
@@ -943,6 +931,11 @@ function landingCheck(scene, field, pl) {
         pl.platform = null;
         pl.airImpulse = true;
         tone(scene, 1040, 0.12, 0.14);
+        // animación de compresión del resorte + partículas + sacudida leve
+        p.spring.setScale(1, 0.35);
+        scene.tweens.add({ targets: p.spring, scaleY: 1, duration: 220, ease: "Back.Out" });
+        burst(scene, field, pl.x, top, 0x2ecc71, 9, 32, 420);
+        field.camera.shake(120, 0.004);
         return;
       }
       if (p.type === "breakable") {
@@ -953,6 +946,7 @@ function landingCheck(scene, field, pl) {
         pl.airImpulse = true;
         breakPlatform(scene, p);
         tone(scene, 240, 0.12, 0.12);
+        burst(scene, field, pl.x, top, 0xb5651d, 8, 26, 400);
         return;
       }
       pl.y = top - P_HALF_H;
@@ -960,6 +954,7 @@ function landingCheck(scene, field, pl) {
       pl.grounded = true;
       pl.platform = p;
       pl.airImpulse = true;
+      if (impact > 320) burst(scene, field, pl.x, top, 0xdfe6ff, 5, 18, 320);
       return;
     }
   }
@@ -980,36 +975,32 @@ function breakPlatform(scene, p) {
   });
 }
 
-function checkTurrets(scene, field, pl, time) {
+function checkTurrets(scene, field, time) {
+  const pl = field.player;
   for (const p of field.platforms) {
     if (!p.hasTurret || p.broken) continue;
     const tx = p.x + (PLAT_W / 2 - 12);
     const ty = p.y - PLAT_H / 2 - 8;
-    if (
-      Math.abs(pl.x - tx) < P_HALF_W + 11 &&
-      Math.abs(pl.y - ty) < P_HALF_H + 12
-    ) {
-      hitPlayer(scene, field, pl, time, tx);
+    if (Math.abs(pl.x - tx) < P_HALF_W + 11 && Math.abs(pl.y - ty) < P_HALF_H + 12) {
+      hitPlayer(scene, field, time, tx);
       return;
     }
   }
 }
 
-function checkHazards(scene, field, pl, time) {
+function checkHazards(scene, field, time) {
+  const pl = field.player;
   for (const hz of field.hazards) {
     if (!hz.active) continue;
-    if (
-      Math.abs(pl.x - hz.x) < P_HALF_W + 12 &&
-      Math.abs(pl.y - hz.y) < P_HALF_H + 12
-    ) {
-      hitPlayer(scene, field, pl, time, hz.x);
+    if (Math.abs(pl.x - hz.x) < P_HALF_W + 12 && Math.abs(pl.y - hz.y) < P_HALF_H + 12) {
+      hitPlayer(scene, field, time, hz.x);
       return;
     }
   }
 }
 
-// MODIFICADO: añadido temblor de cámara y paso de 'pl'
-function hitPlayer(scene, field, pl, time, fromX) {
+function hitPlayer(scene, field, time, fromX) {
+  const pl = field.player;
   pl.lives -= 1;
   pl.invulnUntil = time + INVULN_MS;
   pl.vy = 260;
@@ -1018,19 +1009,29 @@ function hitPlayer(scene, field, pl, time, fromX) {
   pl.grounded = false;
   pl.platform = null;
   tone(scene, 150, 0.18, 0.16);
-
-  // MODIFICADO: temblor de la cámara correspondiente
-  scene.cameras.main.shake(300, 0.01);
-
+  field.camera.shake(250, 0.008);
+  pl.sprite.setTint(0xff5555);
+  burst(scene, field, pl.x, pl.y, 0xff5d5d, 9, 28, 420);
+  comicHit(scene, field, pl.x, pl.y - 34);
   if (pl.lives <= 0) eliminate(pl);
 }
 
-function handleFall(scene, field, pl, time) {
+// CORREGIDO: rescata al jugador DENTRO de la pantalla (cerca de arriba) con impulso
+// hacia arriba. Antes lo dejaban debajo del borde, lo que re-disparaba la caída cada
+// frame (audio trabado) y nunca recuperaba el impulso.
+function handleFall(scene, field, time) {
+  const pl = field.player;
+  const cam = field.camera;
   const inGrace = time < pl.fallGraceUntil;
   if (!inGrace) {
     pl.lives -= 1;
     pl.fallGraceUntil = time + FALL_GRACE_MS;
     tone(scene, 120, 0.22, 0.16);
+    comicHit(
+      scene, field,
+      Phaser.Math.Clamp(pl.x, field.originX + 40, field.originX + field.width - 40),
+      cam.scrollY + H - 90,
+    );
     if (pl.lives <= 0) {
       eliminate(pl);
       return;
@@ -1038,18 +1039,9 @@ function handleFall(scene, field, pl, time) {
   } else {
     tone(scene, 200, 0.1, 0.1);
   }
-
-  if (scene.state.twoPlayers) {
-    // En 2P cae desde el cielo, manteniendo nivel
-    pl.y = scene.cameras.main.scrollY - 50;
-    pl.vy = 0;
-  } else {
-    // En 1P salta desde abajo
-    pl.y = scene.cameras.main.scrollY + H + 90;
-    pl.vy = -JUMP_V;
-  }
-
-  pl.x = Phaser.Math.Clamp(pl.x, 40, field.width - 40);
+  pl.y = cam.scrollY + 90;
+  pl.x = Phaser.Math.Clamp(pl.x, field.originX + 40, field.originX + field.width - 40);
+  pl.vy = -JUMP_V;
   pl.grounded = false;
   pl.platform = null;
   pl.invulnUntil = time + INVULN_MS;
@@ -1058,29 +1050,91 @@ function handleFall(scene, field, pl, time) {
 
 function eliminate(pl) {
   pl.alive = false;
+  pl.sprite.clearTint();
   pl.sprite.setVisible(false);
 }
 
-function checkPlayerCollision(scene, field, p1, p2) {
-  const distX = Math.abs(p1.x - p2.x);
-  const distY = Math.abs(p1.y - p2.y);
-  const threshold = CHAR_W * 0.7;
-  if (distX < threshold && distY < CHAR_H * 0.8) {
-    // Empujar horizontalmente sin quitar vida ni fuerza hacia arriba
-    const dir = p1.x < p2.x ? -1 : 1;
-    const force = 180;
-    p1.vx = -dir * force;
-    p2.vx = dir * force;
-    // Pequeño separador para evitar colisiones múltiples
-    p1.x += -dir * 8;
-    p2.x += dir * 8;
-    tone(scene, 300, 0.1, 0.1);
+// =====================================================================
+// Efectos visuales (partículas, hitos, estrellas fugaces)
+// =====================================================================
+
+function burst(scene, field, x, y, color, count, spread, life) {
+  for (let i = 0; i < count; i++) {
+    const p = scene.add.circle(x, y, Phaser.Math.Between(2, 4), color, 0.9);
+    field.layer.add(p);
+    const ang = Math.random() * Math.PI * 2;
+    const dist = Phaser.Math.Between(spread * 0.4, spread);
+    scene.tweens.add({
+      targets: p,
+      x: x + Math.cos(ang) * dist,
+      y: y + Math.sin(ang) * dist - 6,
+      alpha: 0,
+      scale: 0.2,
+      duration: life,
+      ease: "Quad.Out",
+      onComplete: () => p.destroy(),
+    });
   }
 }
 
-function recyclePlatforms(field, cam1, cam2, two) {
-  const scrollY = two ? Math.min(cam1.scrollY, cam2.scrollY) : cam1.scrollY;
-  const limit = scrollY + H + 80;
+// Animación tipo cómic al perder una vida ("¡PUM!", "¡ZAS!"...)
+function comicHit(scene, field, x, y) {
+  const words = ["¡PUM!", "¡ZAS!", "¡AY!", "¡BAM!", "¡UFF!"];
+  const word = words[Math.floor(Math.random() * words.length)];
+  const star = scene.add.star(0, 0, 11, 16, 32, 0xffe34d).setStrokeStyle(3, 0xff3b3b);
+  const txt = scene.add.text(0, 2, word, {
+    fontFamily: "monospace", fontSize: "18px", color: "#c81d25", fontStyle: "bold",
+  }).setOrigin(0.5);
+  const c = scene.add.container(x, y, [star, txt]).setDepth(20);
+  field.layer.add(c);
+  c.setScale(0.2);
+  scene.tweens.add({
+    targets: c,
+    scale: 1.15,
+    angle: Phaser.Math.Between(-12, 12),
+    duration: 150,
+    ease: "Back.Out",
+    onComplete: () => {
+      scene.tweens.add({
+        targets: c, alpha: 0, scale: 1.4, duration: 360, delay: 240,
+        onComplete: () => c.destroy(),
+      });
+    },
+  });
+}
+
+function showMilestone(scene, field, h) {
+  const pop = field.hud.popup;
+  pop.setText("¡" + h + "m!");
+  pop.setAlpha(1).setScale(1);
+  scene.tweens.killTweensOf(pop);
+  scene.tweens.add({
+    targets: pop,
+    scale: 1.6,
+    alpha: 0,
+    duration: 900,
+    ease: "Quad.Out",
+  });
+  tone(scene, 1200, 0.12, 0.12);
+}
+
+function shootingStar(scene, field, cam) {
+  const x = field.originX + Phaser.Math.Between(40, field.width - 20);
+  const y = cam.scrollY + Phaser.Math.Between(20, 200);
+  const s = scene.add.rectangle(x, y, 3, 3, 0xffffff, 0.9);
+  field.layer.add(s);
+  scene.tweens.add({
+    targets: s,
+    x: x - 130,
+    y: y + 90,
+    alpha: 0,
+    duration: 700,
+    onComplete: () => s.destroy(),
+  });
+}
+
+function recyclePlatforms(field, cam) {
+  const limit = cam.scrollY + H + 80;
   const h = field.maxHeight;
   for (const p of field.platforms) {
     if (p.y > limit) {
@@ -1095,14 +1149,13 @@ function recyclePlatforms(field, cam1, cam2, two) {
   }
 }
 
-function recycleStars(field, cam1, cam2, two) {
-  const scrollY = two ? Math.min(cam1.scrollY, cam2.scrollY) : cam1.scrollY;
-  const limit = scrollY + H + 10;
-  const top = scrollY - 10;
+function recycleStars(field, cam) {
+  const limit = cam.scrollY + H + 10;
+  const top = cam.scrollY - 10;
   for (const st of field.stars) {
     if (st.y > limit) {
       st.y = top;
-      st.x = Phaser.Math.Between(6, field.width - 6);
+      st.x = field.originX + Phaser.Math.Between(6, field.width - 6);
     }
   }
 }
@@ -1113,55 +1166,49 @@ function recycleStars(field, cam1, cam2, two) {
 
 function createHud(scene) {
   scene.hud = {
-    p1: makeHudSide(scene, "#00e0ff", false),
-    p2: makeHudSide(scene, "#ff5da2", true),
+    p1: makeHudSide(scene, "#00e0ff"),
+    p2: makeHudSide(scene, "#ff5da2"),
   };
+  scene.fields[0].hud = scene.hud.p1;
+  scene.fields[1].hud = scene.hud.p2;
 }
 
-function makeHudSide(scene, color, isRight) {
+function makeHudSide(scene, color) {
   const container = scene.add.container(0, 0).setScrollFactor(0).setDepth(100);
-  const anchorX = isRight ? W - 10 : 10;
-  const originX = isRight ? 1 : 0;
-
-  const name = scene.add.text(anchorX, 8, "", {
-    fontFamily: "monospace",
-    fontSize: "14px",
-    color,
-    fontStyle: "bold",
-  }).setOrigin(originX, 0);
-
-  const height = scene.add.text(anchorX, 26, "", {
-    fontFamily: "monospace",
-    fontSize: "20px",
-    color: "#e1ff00",
-    fontStyle: "bold",
-  }).setOrigin(originX, 0);
-
-  const lives = scene.add.text(anchorX, 50, "", {
-    fontFamily: "monospace",
-    fontSize: "18px",
-    color,
-  }).setOrigin(originX, 0);
-
-  container.add([name, height, lives]);
-  return { container, name, height, lives };
+  const name = scene.add.text(10, 8, "", {
+    fontFamily: "monospace", fontSize: "13px", color, fontStyle: "bold",
+  });
+  const height = scene.add.text(10, 26, "", {
+    fontFamily: "monospace", fontSize: "20px", color: "#e1ff00", fontStyle: "bold",
+  });
+  const lives = scene.add.text(SPLIT_W - 10, 12, "", {
+    fontFamily: "monospace", fontSize: "18px", color,
+  }).setOrigin(1, 0);
+  const divider = scene.add.rectangle(SPLIT_W - 2, H / 2, 3, H, COLORS.divider, 0.8);
+  const popup = scene.add.text(SPLIT_W / 2, 120, "", {
+    fontFamily: "monospace", fontSize: "26px", color: "#e1ff00", fontStyle: "bold",
+  }).setOrigin(0.5).setAlpha(0);
+  container.add([name, height, lives, divider, popup]);
+  return { container, name, height, lives, divider, popup };
 }
 
 function refreshHud(scene) {
   scene.hud.p1.container.setVisible(true);
   scene.hud.p2.container.setVisible(scene.state.twoPlayers);
+  scene.hud.p1.divider.setVisible(scene.state.twoPlayers);
+  scene.hud.p2.divider.setVisible(false);
 }
 
-function refreshFieldHud(scene, pl) {
-  const tag = pl.prefix;
-  const hud = pl.index === 0 ? scene.hud.p1 : scene.hud.p2;
-  hud.name.setText(tag + " " + CHARACTERS[pl.charIndex].name);
-  hud.height.setText(String(pl.height).padStart(4, "0") + "m");
-  hud.lives.setText(pl.alive ? "♥".repeat(pl.lives) : "FUERA");
+function refreshFieldHud(scene, field) {
+  const pl = field.player;
+  const tag = pl.index === 0 ? "P1" : "P2";
+  field.hud.name.setText(tag + " " + CHARACTERS[pl.charIndex].name);
+  field.hud.height.setText(String(pl.height).padStart(4, "0") + "m");
+  field.hud.lives.setText(pl.alive ? "♥".repeat(pl.lives) : "FUERA");
 }
 
 // =====================================================================
-// Pantalla de inicio (sin cambios relevantes)
+// Pantalla de inicio
 // =====================================================================
 
 function createStartScreen(scene) {
@@ -1169,111 +1216,42 @@ function createStartScreen(scene) {
   const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
   c.add(scene.add.image(W / 2, H / 2, "menu_bg"));
   c.add(scene.add.rectangle(W / 2, H / 2, W, H, 0x0a0a2a, 0.3));
-  c.add(
-    scene.add
-      .rectangle(W / 2, 92, 540, 116, 0x0a0a2a, 0.55)
-      .setStrokeStyle(3, 0xffb86a, 0.85),
-  );
-  c.add(
-    scene.add
-      .text(W / 2, 62, "ASCENSO", {
-        fontFamily: "monospace",
-        fontSize: "46px",
-        color: "#8cff5d",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5),
-  );
-  c.add(
-    scene.add
-      .text(W / 2, 96, "o", {
-        fontFamily: "monospace",
-        fontSize: "18px",
-        color: "#f7ffd8",
-      })
-      .setOrigin(0.5),
-  );
-  c.add(
-    scene.add
-      .text(W / 2, 128, "DEPORTACIÓN", {
-        fontFamily: "monospace",
-        fontSize: "40px",
-        color: "#ff5d5d",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5),
-  );
-  c.add(
-    scene.add
-      .rectangle(W / 2, 342, 600, 384, 0x0a0a2a, 0.5)
-      .setStrokeStyle(2, 0x2b3566, 0.8),
-  );
-  c.add(
-    scene.add
-      .text(
-        W / 2,
-        185,
-        "Salta de plataforma en plataforma y sube lo más alto posible.\n" +
-        "Joystick: moverte  ·  ARRIBA: saltar  ·  BOTON 1: doble impulso\n" +
-        "Esquiva torretas y drones. Si caes, ¡te DEPORTAN! (pierdes vida)\n" +
-        "2 jugadores: pantalla dividida, gana quien más alto llegue.\n" +
-        "¡Los jugadores se empujan al tocarse!",
-        {
-          fontFamily: "monospace",
-          fontSize: "13px",
-          color: "#dfe6ff",
-          align: "center",
-        },
-      )
-      .setOrigin(0.5),
-  );
+  c.add(scene.add.rectangle(W / 2, 92, 540, 116, 0x0a0a2a, 0.55).setStrokeStyle(3, 0xffb86a, 0.85));
+  c.add(scene.add.text(W / 2, 62, "ASCENSO", {
+    fontFamily: "monospace", fontSize: "46px", color: "#8cff5d", fontStyle: "bold",
+  }).setOrigin(0.5));
+  c.add(scene.add.text(W / 2, 96, "o", {
+    fontFamily: "monospace", fontSize: "18px", color: "#f7ffd8",
+  }).setOrigin(0.5));
+  c.add(scene.add.text(W / 2, 128, "DEPORTACIÓN", {
+    fontFamily: "monospace", fontSize: "40px", color: "#ff5d5d", fontStyle: "bold",
+  }).setOrigin(0.5));
+  c.add(scene.add.rectangle(W / 2, 342, 600, 384, 0x0a0a2a, 0.5).setStrokeStyle(2, 0x2b3566, 0.8));
+  c.add(scene.add.text(W / 2, 188,
+    "Salta de plataforma en plataforma y sube lo más alto posible.\n" +
+    "Joystick: moverte  ·  ARRIBA: saltar  ·  BOTON 1: doble impulso\n" +
+    "Esquiva torretas y drones. Si caes, ¡te DEPORTAN! (pierdes vida)\n" +
+    "2 jugadores: PANTALLA DIVIDIDA, gana quien más alto llegue.",
+    { fontFamily: "monospace", fontSize: "13px", color: "#dfe6ff", align: "center" },
+  ).setOrigin(0.5));
   const mkBtn = (y, label) =>
-    scene.add
-      .text(W / 2, y, label, {
-        fontFamily: "monospace",
-        fontSize: "20px",
-        color: "#f7ffd8",
-        fontStyle: "bold",
-        backgroundColor: "#1b2a6b",
-        padding: { x: 16, y: 8 },
-      })
-      .setOrigin(0.5);
+    scene.add.text(W / 2, y, label, {
+      fontFamily: "monospace", fontSize: "20px", color: "#f7ffd8",
+      fontStyle: "bold", backgroundColor: "#1b2a6b", padding: { x: 16, y: 8 },
+    }).setOrigin(0.5);
   scene.startScreen.btn1 = mkBtn(290, "1 JUGADOR");
   scene.startScreen.btn2 = mkBtn(340, "2 JUGADORES");
   c.add(scene.startScreen.btn1);
   c.add(scene.startScreen.btn2);
-  c.add(
-    scene.add
-      .text(
-        W / 2,
-        390,
-        "Joystick ARRIBA/ABAJO para elegir  ·  START o BOTON 1",
-        {
-          fontFamily: "monospace",
-          fontSize: "12px",
-          color: "#8b95bb",
-        },
-      )
-      .setOrigin(0.5),
-  );
-  c.add(
-    scene.add
-      .text(W / 2, 440, "— MEJORES ALTURAS —", {
-        fontFamily: "monospace",
-        fontSize: "13px",
-        color: "#e1ff00",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5),
-  );
-  scene.startScreen.lead = scene.add
-    .text(W / 2, 470, "", {
-      fontFamily: "monospace",
-      fontSize: "13px",
-      color: "#f7ffd8",
-      align: "center",
-    })
-    .setOrigin(0.5);
+  c.add(scene.add.text(W / 2, 390, "Joystick ARRIBA/ABAJO para elegir  ·  START o BOTON 1", {
+    fontFamily: "monospace", fontSize: "12px", color: "#8b95bb",
+  }).setOrigin(0.5));
+  c.add(scene.add.text(W / 2, 440, "— MEJORES ALTURAS —", {
+    fontFamily: "monospace", fontSize: "13px", color: "#e1ff00", fontStyle: "bold",
+  }).setOrigin(0.5));
+  scene.startScreen.lead = scene.add.text(W / 2, 470, "", {
+    fontFamily: "monospace", fontSize: "13px", color: "#f7ffd8", align: "center",
+  }).setOrigin(0.5);
   c.add(scene.startScreen.lead);
   scene.startScreen.container = c;
 }
@@ -1282,6 +1260,7 @@ function showStartScreen(scene) {
   scene.state.phase = "start";
   scene.state.nav = scene.state.twoPlayers ? 1 : 0;
   teardownCameras(scene);
+  hideField(scene.fields[1]);
   scene.hud.p1.container.setVisible(false);
   scene.hud.p2.container.setVisible(false);
   scene.selectScreen.container.setVisible(false);
@@ -1312,7 +1291,7 @@ function handleStartMenu(scene) {
 }
 
 // =====================================================================
-// Pantalla de selección de personaje (sin cambios)
+// Pantalla de selección de personaje
 // =====================================================================
 
 function createSelectScreen(scene) {
@@ -1320,112 +1299,45 @@ function createSelectScreen(scene) {
   const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
   c.add(scene.add.image(W / 2, H / 2, "menu_bg"));
   c.add(scene.add.rectangle(W / 2, H / 2, W, H, 0x0a0a2a, 0.62));
-  c.add(
-    scene.add
-      .text(W / 2, 60, "ELIGE TU CANDIDATO", {
-        fontFamily: "monospace",
-        fontSize: "30px",
-        color: "#e1ff00",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5),
-  );
-  scene.selectScreen.p1Sprite = scene.add
-    .sprite(W / 2 - 180, 250, CHARACTERS[0].key)
-    .setScale(3);
-  scene.selectScreen.p1Name = scene.add
-    .text(W / 2 - 180, 330, "", {
-      fontFamily: "monospace",
-      fontSize: "16px",
-      color: "#00e0ff",
-      fontStyle: "bold",
-    })
-    .setOrigin(0.5);
-  scene.selectScreen.p1Ready = scene.add
-    .text(W / 2 - 180, 360, "", {
-      fontFamily: "monospace",
-      fontSize: "14px",
-      color: "#8cff5d",
-      fontStyle: "bold",
-    })
-    .setOrigin(0.5);
-  c.add(
-    scene.add
-      .text(W / 2 - 180, 150, "P1", {
-        fontFamily: "monospace",
-        fontSize: "22px",
-        color: "#00e0ff",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5),
-  );
-  c.add([
-    scene.selectScreen.p1Sprite,
-    scene.selectScreen.p1Name,
-    scene.selectScreen.p1Ready,
-  ]);
-  scene.selectScreen.p2Sprite = scene.add
-    .sprite(W / 2 + 180, 250, CHARACTERS[1].key)
-    .setScale(3);
-  scene.selectScreen.p2Name = scene.add
-    .text(W / 2 + 180, 330, "", {
-      fontFamily: "monospace",
-      fontSize: "16px",
-      color: "#ff5da2",
-      fontStyle: "bold",
-    })
-    .setOrigin(0.5);
-  scene.selectScreen.p2Ready = scene.add
-    .text(W / 2 + 180, 360, "", {
-      fontFamily: "monospace",
-      fontSize: "14px",
-      color: "#8cff5d",
-      fontStyle: "bold",
-    })
-    .setOrigin(0.5);
-  scene.selectScreen.p2Label = scene.add
-    .text(W / 2 + 180, 150, "P2", {
-      fontFamily: "monospace",
-      fontSize: "22px",
-      color: "#ff5da2",
-      fontStyle: "bold",
-    })
-    .setOrigin(0.5);
-  c.add([
-    scene.selectScreen.p2Label,
-    scene.selectScreen.p2Sprite,
-    scene.selectScreen.p2Name,
-    scene.selectScreen.p2Ready,
-  ]);
-  c.add(
-    scene.add
-      .text(
-        W / 2,
-        440,
-        "Joystick IZQ/DER: cambiar  ·  BOTON 1: confirmar  ·  BOTON 2: cambiar\n" +
-        "START para volver al menú",
-        {
-          fontFamily: "monospace",
-          fontSize: "12px",
-          color: "#8b95bb",
-          align: "center",
-        },
-      )
-      .setOrigin(0.5),
-  );
+  c.add(scene.add.text(W / 2, 60, "ELIGE TU CANDIDATO", {
+    fontFamily: "monospace", fontSize: "30px", color: "#e1ff00", fontStyle: "bold",
+  }).setOrigin(0.5));
+
+  scene.selectScreen.p1Sprite = scene.add.sprite(W / 2 - 180, 250, CHARACTERS[0].key).setScale(4);
+  scene.selectScreen.p1Name = scene.add.text(W / 2 - 180, 340, "", {
+    fontFamily: "monospace", fontSize: "15px", color: "#00e0ff", fontStyle: "bold",
+  }).setOrigin(0.5);
+  scene.selectScreen.p1Ready = scene.add.text(W / 2 - 180, 368, "", {
+    fontFamily: "monospace", fontSize: "14px", color: "#8cff5d", fontStyle: "bold",
+  }).setOrigin(0.5);
+  c.add(scene.add.text(W / 2 - 180, 150, "P1", {
+    fontFamily: "monospace", fontSize: "22px", color: "#00e0ff", fontStyle: "bold",
+  }).setOrigin(0.5));
+  c.add([scene.selectScreen.p1Sprite, scene.selectScreen.p1Name, scene.selectScreen.p1Ready]);
+
+  scene.selectScreen.p2Sprite = scene.add.sprite(W / 2 + 180, 250, CHARACTERS[1].key).setScale(4);
+  scene.selectScreen.p2Name = scene.add.text(W / 2 + 180, 340, "", {
+    fontFamily: "monospace", fontSize: "15px", color: "#ff5da2", fontStyle: "bold",
+  }).setOrigin(0.5);
+  scene.selectScreen.p2Ready = scene.add.text(W / 2 + 180, 368, "", {
+    fontFamily: "monospace", fontSize: "14px", color: "#8cff5d", fontStyle: "bold",
+  }).setOrigin(0.5);
+  scene.selectScreen.p2Label = scene.add.text(W / 2 + 180, 150, "P2", {
+    fontFamily: "monospace", fontSize: "22px", color: "#ff5da2", fontStyle: "bold",
+  }).setOrigin(0.5);
+  c.add([scene.selectScreen.p2Label, scene.selectScreen.p2Sprite, scene.selectScreen.p2Name, scene.selectScreen.p2Ready]);
+
+  c.add(scene.add.text(W / 2, 440,
+    "Joystick IZQ/DER: cambiar  ·  BOTON 1: confirmar  ·  BOTON 2: cambiar\n" +
+    "START para volver al menú",
+    { fontFamily: "monospace", fontSize: "12px", color: "#8b95bb", align: "center" },
+  ).setOrigin(0.5));
   scene.selectScreen.container = c;
 }
 
 function showSelect(scene) {
   scene.state.phase = "select";
-  scene.state.sel = {
-    p1: 0,
-    p2: 1 % CHARACTERS.length,
-    p1ok: false,
-    p2ok: false,
-    cd1: 0,
-    cd2: 0,
-  };
+  scene.state.sel = { p1: 0, p2: 1 % CHARACTERS.length, p1ok: false, p2ok: false, cd1: 0, cd2: 0 };
   teardownCameras(scene);
   scene.hud.p1.container.setVisible(false);
   scene.hud.p2.container.setVisible(false);
@@ -1460,49 +1372,23 @@ function handleSelect(scene, time) {
   }
   if (!s.p1ok && time > s.cd1) {
     if (isControlHeld(scene, "P1_L")) {
-      s.p1 = (s.p1 + n - 1) % n;
-      s.cd1 = time + 180;
-      refreshSelect(scene);
-      tone(scene, 520, 0.04, 0.1);
+      s.p1 = (s.p1 + n - 1) % n; s.cd1 = time + 180; refreshSelect(scene); tone(scene, 520, 0.04, 0.1);
     } else if (isControlHeld(scene, "P1_R")) {
-      s.p1 = (s.p1 + 1) % n;
-      s.cd1 = time + 180;
-      refreshSelect(scene);
-      tone(scene, 520, 0.04, 0.1);
+      s.p1 = (s.p1 + 1) % n; s.cd1 = time + 180; refreshSelect(scene); tone(scene, 520, 0.04, 0.1);
     }
   }
-  if (consumePressed(scene, "P1_1")) {
-    s.p1ok = true;
-    refreshSelect(scene);
-    tone(scene, 760, 0.08, 0.12);
-  }
-  if (consumePressed(scene, "P1_2")) {
-    s.p1ok = false;
-    refreshSelect(scene);
-  }
+  if (consumePressed(scene, "P1_1")) { s.p1ok = true; refreshSelect(scene); tone(scene, 760, 0.08, 0.12); }
+  if (consumePressed(scene, "P1_2")) { s.p1ok = false; refreshSelect(scene); }
   if (two) {
     if (!s.p2ok && time > s.cd2) {
       if (isControlHeld(scene, "P2_L")) {
-        s.p2 = (s.p2 + n - 1) % n;
-        s.cd2 = time + 180;
-        refreshSelect(scene);
-        tone(scene, 520, 0.04, 0.1);
+        s.p2 = (s.p2 + n - 1) % n; s.cd2 = time + 180; refreshSelect(scene); tone(scene, 520, 0.04, 0.1);
       } else if (isControlHeld(scene, "P2_R")) {
-        s.p2 = (s.p2 + 1) % n;
-        s.cd2 = time + 180;
-        refreshSelect(scene);
-        tone(scene, 520, 0.04, 0.1);
+        s.p2 = (s.p2 + 1) % n; s.cd2 = time + 180; refreshSelect(scene); tone(scene, 520, 0.04, 0.1);
       }
     }
-    if (consumePressed(scene, "P2_1")) {
-      s.p2ok = true;
-      refreshSelect(scene);
-      tone(scene, 760, 0.08, 0.12);
-    }
-    if (consumePressed(scene, "P2_2")) {
-      s.p2ok = false;
-      refreshSelect(scene);
-    }
+    if (consumePressed(scene, "P2_1")) { s.p2ok = true; refreshSelect(scene); tone(scene, 760, 0.08, 0.12); }
+    if (consumePressed(scene, "P2_2")) { s.p2ok = false; refreshSelect(scene); }
   }
   if (s.p1ok && (!two || s.p2ok)) {
     tone(scene, 900, 0.12, 0.13);
@@ -1511,7 +1397,7 @@ function handleSelect(scene, time) {
 }
 
 // =====================================================================
-// Resultados + iniciales (sin cambios relevantes)
+// Resultados + iniciales
 // =====================================================================
 
 function createResultsScreen(scene) {
@@ -1519,84 +1405,36 @@ function createResultsScreen(scene) {
   const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
   c.add(scene.add.image(W / 2, H / 2, "menu_bg"));
   c.add(scene.add.rectangle(W / 2, H / 2, W, H, 0x0a0a2a, 0.62));
-  c.add(
-    scene.add
-      .text(W / 2, 64, "FIN DE LA CAMPAÑA", {
-        fontFamily: "monospace",
-        fontSize: "32px",
-        color: "#e1ff00",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5),
-  );
-  scene.resultsScreen.result = scene.add
-    .text(W / 2, 150, "", {
-      fontFamily: "monospace",
-      fontSize: "20px",
-      color: "#f7ffd8",
-      align: "center",
-      fontStyle: "bold",
-    })
-    .setOrigin(0.5);
+  c.add(scene.add.text(W / 2, 64, "FIN DE LA CAMPAÑA", {
+    fontFamily: "monospace", fontSize: "32px", color: "#e1ff00", fontStyle: "bold",
+  }).setOrigin(0.5));
+  scene.resultsScreen.result = scene.add.text(W / 2, 150, "", {
+    fontFamily: "monospace", fontSize: "20px", color: "#f7ffd8", align: "center", fontStyle: "bold",
+  }).setOrigin(0.5);
   c.add(scene.resultsScreen.result);
-  scene.resultsScreen.prompt = scene.add
-    .text(W / 2, 240, "Escribe tus iniciales:", {
-      fontFamily: "monospace",
-      fontSize: "15px",
-      color: "#b9c2e0",
-    })
-    .setOrigin(0.5);
+  scene.resultsScreen.prompt = scene.add.text(W / 2, 240, "Escribe tus iniciales:", {
+    fontFamily: "monospace", fontSize: "15px", color: "#b9c2e0",
+  }).setOrigin(0.5);
   c.add(scene.resultsScreen.prompt);
-  scene.resultsScreen.initials = scene.add
-    .text(W / 2, 292, "", {
-      fontFamily: "monospace",
-      fontSize: "44px",
-      color: "#e1ff00",
-      fontStyle: "bold",
-    })
-    .setOrigin(0.5);
+  scene.resultsScreen.initials = scene.add.text(W / 2, 292, "", {
+    fontFamily: "monospace", fontSize: "44px", color: "#e1ff00", fontStyle: "bold",
+  }).setOrigin(0.5);
   c.add(scene.resultsScreen.initials);
-  scene.resultsScreen.help = scene.add
-    .text(
-      W / 2,
-      350,
-      "Joystick: ARRIBA/ABAJO letra · IZQ/DER hueco\n" +
-      "BOTON 1: guardar    ·    START: omitir",
-      {
-        fontFamily: "monospace",
-        fontSize: "12px",
-        color: "#8b95bb",
-        align: "center",
-      },
-    )
-    .setOrigin(0.5);
+  scene.resultsScreen.help = scene.add.text(W / 2, 350,
+    "Joystick: ARRIBA/ABAJO letra · IZQ/DER hueco\nBOTON 1: guardar    ·    START: omitir",
+    { fontFamily: "monospace", fontSize: "12px", color: "#8b95bb", align: "center" },
+  ).setOrigin(0.5);
   c.add(scene.resultsScreen.help);
-  scene.resultsScreen.status = scene.add
-    .text(W / 2, 410, "", {
-      fontFamily: "monospace",
-      fontSize: "13px",
-      color: "#ff5da2",
-    })
-    .setOrigin(0.5);
+  scene.resultsScreen.status = scene.add.text(W / 2, 410, "", {
+    fontFamily: "monospace", fontSize: "13px", color: "#ff5da2",
+  }).setOrigin(0.5);
   c.add(scene.resultsScreen.status);
-  c.add(
-    scene.add
-      .text(W / 2, 460, "— MEJORES ALTURAS —", {
-        fontFamily: "monospace",
-        fontSize: "13px",
-        color: "#e1ff00",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5),
-  );
-  scene.resultsScreen.lead = scene.add
-    .text(W / 2, 490, "", {
-      fontFamily: "monospace",
-      fontSize: "13px",
-      color: "#f7ffd8",
-      align: "center",
-    })
-    .setOrigin(0.5);
+  c.add(scene.add.text(W / 2, 460, "— MEJORES ALTURAS —", {
+    fontFamily: "monospace", fontSize: "13px", color: "#e1ff00", fontStyle: "bold",
+  }).setOrigin(0.5));
+  scene.resultsScreen.lead = scene.add.text(W / 2, 490, "", {
+    fontFamily: "monospace", fontSize: "13px", color: "#f7ffd8", align: "center",
+  }).setOrigin(0.5);
   c.add(scene.resultsScreen.lead);
   scene.resultsScreen.container = c;
 }
@@ -1612,8 +1450,7 @@ function endMatch(scene) {
       resultText = "GANA P1\nP1 " + p1.height + "m   ·   P2 " + p2.height + "m";
     else if (p2.height > p1.height)
       resultText = "GANA P2\nP1 " + p1.height + "m   ·   P2 " + p2.height + "m";
-    else
-      resultText = "EMPATE\nP1 " + p1.height + "m   ·   P2 " + p2.height + "m";
+    else resultText = "EMPATE\nP1 " + p1.height + "m   ·   P2 " + p2.height + "m";
     best = Math.max(p1.height, p2.height);
   } else {
     resultText = "ALTURA: " + p1.height + "m";
@@ -1622,6 +1459,8 @@ function endMatch(scene) {
   s.pendingScore = best;
   s.entry = { row: [0, 0, 0], slot: 0, cdUntil: 0 };
   s.phase = "results";
+  scene.fields[0].active = false;
+  scene.fields[1].active = false;
   teardownCameras(scene);
   scene.hud.p1.container.setVisible(false);
   scene.hud.p2.container.setVisible(false);
@@ -1641,11 +1480,7 @@ const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 function refreshInitials(scene) {
   const e = scene.state.entry;
   scene.resultsScreen.initials.setText(
-    e.row
-      .map((idx, i) =>
-        i === e.slot ? "[" + ALPHABET[idx] + "]" : " " + ALPHABET[idx] + " ",
-      )
-      .join(""),
+    e.row.map((idx, i) => (i === e.slot ? "[" + ALPHABET[idx] + "]" : " " + ALPHABET[idx] + " ")).join(""),
   );
 }
 
@@ -1654,31 +1489,14 @@ function handleResults(scene, time) {
   const hasScore = scene.state.pendingScore > 0;
   if (hasScore && time > e.cdUntil) {
     let moved = false;
-    if (isControlHeld(scene, "P1_U") || isControlHeld(scene, "P2_U")) {
-      e.row[e.slot] = (e.row[e.slot] + 1) % 26;
-      moved = true;
-    } else if (isControlHeld(scene, "P1_D") || isControlHeld(scene, "P2_D")) {
-      e.row[e.slot] = (e.row[e.slot] + 25) % 26;
-      moved = true;
-    } else if (isControlHeld(scene, "P1_L") || isControlHeld(scene, "P2_L")) {
-      e.slot = (e.slot + 2) % 3;
-      moved = true;
-    } else if (isControlHeld(scene, "P1_R") || isControlHeld(scene, "P2_R")) {
-      e.slot = (e.slot + 1) % 3;
-      moved = true;
-    }
-    if (moved) {
-      e.cdUntil = time + 160;
-      refreshInitials(scene);
-      tone(scene, 520, 0.04, 0.1);
-    }
+    if (isControlHeld(scene, "P1_U") || isControlHeld(scene, "P2_U")) { e.row[e.slot] = (e.row[e.slot] + 1) % 26; moved = true; }
+    else if (isControlHeld(scene, "P1_D") || isControlHeld(scene, "P2_D")) { e.row[e.slot] = (e.row[e.slot] + 25) % 26; moved = true; }
+    else if (isControlHeld(scene, "P1_L") || isControlHeld(scene, "P2_L")) { e.slot = (e.slot + 2) % 3; moved = true; }
+    else if (isControlHeld(scene, "P1_R") || isControlHeld(scene, "P2_R")) { e.slot = (e.slot + 1) % 3; moved = true; }
+    if (moved) { e.cdUntil = time + 160; refreshInitials(scene); tone(scene, 520, 0.04, 0.1); }
   }
-  if (hasScore && consumeAnyPressedControl(scene, ["P1_1", "P2_1"])) {
-    saveScore(scene);
-    return;
-  }
-  if (consumeAnyPressedControl(scene, ["START1", "START2"]))
-    returnToStart(scene);
+  if (hasScore && consumeAnyPressedControl(scene, ["P1_1", "P2_1"])) { saveScore(scene); return; }
+  if (consumeAnyPressedControl(scene, ["START1", "START2"])) returnToStart(scene);
 }
 
 function saveScore(scene) {
@@ -1696,15 +1514,9 @@ function saveScore(scene) {
     .then((scores) => {
       scene.state.highScores = scores;
       refreshLeaderboards(scene);
-      scene.resultsScreen.status.setText(
-        "¡Guardado " + name + "! START para volver.",
-      );
+      scene.resultsScreen.status.setText("¡Guardado " + name + "! START para volver.");
     })
-    .catch(() =>
-      scene.resultsScreen.status.setText(
-        "No se pudo guardar. START para volver.",
-      ),
-    );
+    .catch(() => scene.resultsScreen.status.setText("No se pudo guardar. START para volver."));
 }
 
 function returnToStart(scene) {
@@ -1718,15 +1530,10 @@ function returnToStart(scene) {
 function refreshLeaderboards(scene) {
   const lines = scene.state.highScores.length
     ? scene.state.highScores.map(
-      (e, i) =>
-        String(i + 1) +
-        ". " +
-        e.name.padEnd(3, " ") +
-        "  " +
-        String(e.score).padStart(4, "0") +
-        "m  " +
-        e.mode,
-    )
+        (e, i) =>
+          String(i + 1) + ". " + e.name.padEnd(3, " ") + "  " +
+          String(e.score).padStart(4, "0") + "m  " + e.mode,
+      )
     : ["SIN PUNTAJES AUN"];
   const text = lines.join("\n");
   if (scene.startScreen) scene.startScreen.lead.setText(text);
@@ -1751,11 +1558,11 @@ function tone(scene, freq, dur, vol) {
     o.start();
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
     o.stop(ctx.currentTime + dur);
-  } catch (err) { }
+  } catch (err) {}
 }
 
 // =====================================================================
-// Input (cabinet bridge)
+// Input (cabinet bridge) — NO modificar el mapeo CABINET_KEYS
 // =====================================================================
 
 function createControls(scene) {
@@ -1765,8 +1572,7 @@ function createControls(scene) {
     if (!key) return;
     const arcadeCode = KEYBOARD_TO_ARCADE[key];
     if (!arcadeCode) return;
-    if (!scene.controls.held[arcadeCode])
-      scene.controls.pressed[arcadeCode] = true;
+    if (!scene.controls.held[arcadeCode]) scene.controls.pressed[arcadeCode] = true;
     scene.controls.held[arcadeCode] = true;
   };
   const onKeyUp = (event) => {
@@ -1820,9 +1626,7 @@ async function persistHighScore(entry) {
   const existing = await loadHighScores();
   const next = existing
     .concat(entry)
-    .sort((a, b) =>
-      b.score !== a.score ? b.score - a.score : a.savedAt < b.savedAt ? 1 : -1,
-    )
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.savedAt < b.savedAt ? 1 : -1))
     .slice(0, MAX_SCORES);
   await storageSet(STORAGE_KEY, next);
   return next;
@@ -1851,9 +1655,7 @@ function getStorage() {
     async get(key) {
       try {
         const raw = window.localStorage.getItem(key);
-        return raw === null
-          ? { found: false, value: null }
-          : { found: true, value: JSON.parse(raw) };
+        return raw === null ? { found: false, value: null } : { found: true, value: JSON.parse(raw) };
       } catch {
         return { found: false, value: null };
       }
