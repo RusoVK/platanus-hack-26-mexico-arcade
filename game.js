@@ -1,5 +1,5 @@
 // Platanus Hack 26 — Equipo Ducks
-// ASCENSO O DEPORTACIÓN
+// PRESIDENT OF MEXICO OR FEDERAL COURT NEW YORK
 // Plataformero vertical infinito (tipo Doodle Jump) con sátira "presidente en campaña".
 // - 1 jugador: pantalla completa.
 // - 2 jugadores: PANTALLA DIVIDIDA, escenarios independientes, se compite por altura/score.
@@ -386,29 +386,45 @@ function ensureMoneyTexture(scene) {
   scene.textures.get("money").setFilter(Phaser.Textures.FilterMode.NEAREST);
 }
 
-// Tile de multitud (la turba que te persigue desde el vacío)
+// Tile de multitud (la turba que te persigue desde el vacío) con carteles
 function ensureCrowdTexture(scene) {
   if (scene.textures.exists("crowdTile")) return;
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
-  const heads = [[8, 30], [22, 26], [36, 31], [50, 27], [60, 29]];
+  const heads = [[10, 46], [26, 42], [42, 47], [58, 43], [69, 46]];
+
+  // cuerpos + cabezas
   g.fillStyle(0x140c1a, 1);
   for (const h of heads) {
-    g.fillCircle(h[0], h[1], 6);
-    g.fillRect(h[0] - 6, h[1] + 4, 12, 44);
+    g.fillCircle(h[0], h[1], 8);
+    g.fillRect(h[0] - 8, h[1] + 6, 16, 60);
   }
   // brazos en alto
-  g.lineStyle(3, 0x140c1a, 1);
+  g.lineStyle(4, 0x140c1a, 1);
   for (const h of heads) {
-    g.beginPath(); g.moveTo(h[0] - 5, h[1] + 6); g.lineTo(h[0] - 10, h[1] - 8); g.strokePath();
-    g.beginPath(); g.moveTo(h[0] + 5, h[1] + 6); g.lineTo(h[0] + 10, h[1] - 8); g.strokePath();
+    g.beginPath(); g.moveTo(h[0] - 6, h[1] + 8); g.lineTo(h[0] - 13, h[1] - 10); g.strokePath();
+    g.beginPath(); g.moveTo(h[0] + 6, h[1] + 8); g.lineTo(h[0] + 13, h[1] - 10); g.strokePath();
+  }
+  // carteles (pancartas) sobre algunas personas
+  const signs = [[26, 42, 0xfff3c4], [58, 43, 0xffffff]];
+  for (const s of signs) {
+    g.fillStyle(0x6b4a2a, 1);
+    g.fillRect(s[0] - 1, s[1] - 30, 3, 34); // palo
+    g.fillStyle(s[2], 1);
+    g.fillRect(s[0] - 15, s[1] - 46, 30, 20); // pancarta
+    g.lineStyle(2, 0x222222, 1);
+    g.strokeRect(s[0] - 15, s[1] - 46, 30, 20);
+    g.fillStyle(0x333333, 1); // líneas de "texto"
+    g.fillRect(s[0] - 11, s[1] - 42, 22, 2);
+    g.fillRect(s[0] - 11, s[1] - 37, 15, 2);
+    g.fillRect(s[0] - 11, s[1] - 32, 19, 2);
   }
   // ojos rojos
   g.fillStyle(0xff3b3b, 1);
   for (const h of heads) {
-    g.fillRect(h[0] - 3, h[1] - 1, 2, 2);
-    g.fillRect(h[0] + 1, h[1] - 1, 2, 2);
+    g.fillRect(h[0] - 4, h[1] - 2, 3, 3);
+    g.fillRect(h[0] + 1, h[1] - 2, 3, 3);
   }
-  g.generateTexture("crowdTile", 64, 76);
+  g.generateTexture("crowdTile", 72, 96);
   g.destroy();
   scene.textures.get("crowdTile").setFilter(Phaser.Textures.FilterMode.NEAREST);
 }
@@ -441,7 +457,7 @@ function buildField(scene, index, originX, camera) {
 
   // multitud que persigue desde el vacío (borde inferior)
   const crowd = scene.add
-    .tileSprite(originX + SPLIT_W / 2, 0, SPLIT_W, 76, "crowdTile")
+    .tileSprite(originX + SPLIT_W / 2, 0, SPLIT_W, 96, "crowdTile")
     .setOrigin(0.5, 1)
     .setDepth(9);
   crowd.setVisible(false);
@@ -515,7 +531,7 @@ function makeHazard(scene, layer) {
   container.setDepth(8);
   container.setVisible(false);
   layer.add(container);
-  return { container, x: 0, y: 0, vx: 0, active: false };
+  return { container, x: 0, y: 0, baseY: 0, phase: 0, vx: 0, active: false };
 }
 
 // =====================================================================
@@ -577,6 +593,7 @@ function resetField(scene, field) {
   const left = field.originX;
   const cx = left + field.width / 2;
 
+  scene.tweens.killTweensOf(pl.sprite);
   setPlayerCharacter(pl, pl.charIndex);
   pl.alive = true;
   pl.lives = START_LIVES;
@@ -629,7 +646,7 @@ function resetField(scene, field) {
   }
 
   field.crowd.setVisible(true);
-  field.crowd.setSize(field.width, 76);
+  field.crowd.setSize(field.width, 96);
   field.crowd.x = left + field.width / 2;
 }
 
@@ -804,6 +821,10 @@ function updatePlatforms(scene, field, dt) {
     if (p.hasTurret) {
       p.tLight.setVisible(Math.floor(scene.time.now / 300) % 2 === 0);
     }
+    if (p.type === "spring" && !p.broken) {
+      // el dinero flota suavemente sobre el resorte
+      p.spring.y = -PLAT_H / 2 - 7 + Math.sin(scene.time.now * 0.005 + p.x * 0.05) * 2;
+    }
   }
 }
 
@@ -821,7 +842,10 @@ function updateHazards(scene, field, dt, time) {
       hz.x = right - 26;
       hz.vx = -Math.abs(hz.vx);
     }
+    // flotación vertical + balanceo
+    hz.y = hz.baseY + Math.sin((scene.time.now + hz.phase) * 0.005) * 8;
     hz.container.setPosition(hz.x, hz.y);
+    hz.container.setRotation(Math.sin((scene.time.now + hz.phase) * 0.008) * 0.2);
     if (hz.y > cam.scrollY + H + 60) {
       hz.active = false;
       hz.container.setVisible(false);
@@ -836,6 +860,8 @@ function updateHazards(scene, field, dt, time) {
   hz.active = true;
   hz.x = Phaser.Math.Between(left + 40, right - 40);
   hz.y = cam.scrollY - 30;
+  hz.baseY = hz.y;
+  hz.phase = Math.random() * 1000;
   const speed = 70 + Math.min(120, h / 30) + Math.random() * 50;
   hz.vx = Math.random() < 0.5 ? -speed : speed;
   hz.container.setVisible(true).setPosition(hz.x, hz.y);
@@ -906,9 +932,11 @@ function stepPlayer(scene, field, dt, time) {
   pl.sprite.scaleX = pl.bScaleX * (1 - sk * 0.55);
   pl.sprite.scaleY = pl.bScaleY * (1 + sk);
 
-  // balanceo al caminar (solo en suelo y moviéndose)
+  // balanceo al caminar; inclinación hacia el movimiento al estar en el aire
   if (pl.grounded && Math.abs(pl.vx) > 5) {
     pl.sprite.setRotation(Math.sin(time * 0.018) * 0.26);
+  } else if (!pl.grounded) {
+    pl.sprite.setRotation(Phaser.Math.Clamp(pl.vx / MOVE_SPEED, -1, 1) * 0.16);
   } else {
     pl.sprite.setRotation(0);
   }
@@ -1013,7 +1041,7 @@ function hitPlayer(scene, field, time, fromX) {
   pl.sprite.setTint(0xff5555);
   burst(scene, field, pl.x, pl.y, 0xff5d5d, 9, 28, 420);
   comicHit(scene, field, pl.x, pl.y - 34);
-  if (pl.lives <= 0) eliminate(pl);
+  if (pl.lives <= 0) eliminate(scene, pl);
 }
 
 // CORREGIDO: rescata al jugador DENTRO de la pantalla (cerca de arriba) con impulso
@@ -1033,7 +1061,7 @@ function handleFall(scene, field, time) {
       cam.scrollY + H - 90,
     );
     if (pl.lives <= 0) {
-      eliminate(pl);
+      eliminate(scene, pl);
       return;
     }
   } else {
@@ -1048,10 +1076,20 @@ function handleFall(scene, field, time) {
   pl.sprite.setPosition(pl.x, pl.y);
 }
 
-function eliminate(pl) {
+function eliminate(scene, pl) {
   pl.alive = false;
   pl.sprite.clearTint();
-  pl.sprite.setVisible(false);
+  // animación de salida: gira y se encoge
+  scene.tweens.add({
+    targets: pl.sprite,
+    angle: pl.sprite.angle + 540,
+    scaleX: 0,
+    scaleY: 0,
+    alpha: 0,
+    duration: 500,
+    ease: "Cubic.In",
+    onComplete: () => pl.sprite.setVisible(false),
+  });
 }
 
 // =====================================================================
@@ -1189,7 +1227,7 @@ function makeHudSide(scene, color) {
     fontFamily: "monospace", fontSize: "26px", color: "#e1ff00", fontStyle: "bold",
   }).setOrigin(0.5).setAlpha(0);
   container.add([name, height, lives, divider, popup]);
-  return { container, name, height, lives, divider, popup };
+  return { container, name, height, lives, divider, popup, color };
 }
 
 function refreshHud(scene) {
@@ -1205,6 +1243,13 @@ function refreshFieldHud(scene, field) {
   field.hud.name.setText(tag + " " + CHARACTERS[pl.charIndex].name);
   field.hud.height.setText(String(pl.height).padStart(4, "0") + "m");
   field.hud.lives.setText(pl.alive ? "♥".repeat(pl.lives) : "FUERA");
+  // latido de alerta cuando queda una sola vida
+  const lv = field.hud.lives;
+  if (pl.alive && pl.lives <= 1) {
+    lv.setColor("#ff4d4d").setScale(1 + Math.sin(scene.time.now * 0.012) * 0.18);
+  } else {
+    lv.setColor(field.hud.color).setScale(1);
+  }
 }
 
 // =====================================================================
@@ -1216,15 +1261,20 @@ function createStartScreen(scene) {
   const c = scene.add.container(0, 0).setScrollFactor(0).setDepth(200);
   c.add(scene.add.image(W / 2, H / 2, "menu_bg"));
   c.add(scene.add.rectangle(W / 2, H / 2, W, H, 0x0a0a2a, 0.3));
-  c.add(scene.add.rectangle(W / 2, 92, 540, 116, 0x0a0a2a, 0.55).setStrokeStyle(3, 0xffb86a, 0.85));
-  c.add(scene.add.text(W / 2, 62, "ASCENSO", {
-    fontFamily: "monospace", fontSize: "46px", color: "#8cff5d", fontStyle: "bold",
+  c.add(scene.add.rectangle(W / 2, 92, 700, 120, 0x0a0a2a, 0.6).setStrokeStyle(3, 0xffb86a, 0.85));
+  const titleTop = scene.add.text(W / 2, 58, "PRESIDENT OF MEXICO", {
+    fontFamily: "monospace", fontSize: "30px", color: "#8cff5d", fontStyle: "bold",
+  }).setOrigin(0.5);
+  c.add(titleTop);
+  scene.tweens.add({
+    targets: titleTop, scaleX: 1.05, scaleY: 1.05,
+    duration: 1000, yoyo: true, repeat: -1, ease: "Sine.InOut",
+  });
+  c.add(scene.add.text(W / 2, 88, "or", {
+    fontFamily: "monospace", fontSize: "16px", color: "#f7ffd8",
   }).setOrigin(0.5));
-  c.add(scene.add.text(W / 2, 96, "o", {
-    fontFamily: "monospace", fontSize: "18px", color: "#f7ffd8",
-  }).setOrigin(0.5));
-  c.add(scene.add.text(W / 2, 128, "DEPORTACIÓN", {
-    fontFamily: "monospace", fontSize: "40px", color: "#ff5d5d", fontStyle: "bold",
+  c.add(scene.add.text(W / 2, 120, "FEDERAL COURT NEW YORK", {
+    fontFamily: "monospace", fontSize: "26px", color: "#ff5d5d", fontStyle: "bold",
   }).setOrigin(0.5));
   c.add(scene.add.rectangle(W / 2, 342, 600, 384, 0x0a0a2a, 0.5).setStrokeStyle(2, 0x2b3566, 0.8));
   c.add(scene.add.text(W / 2, 188,
@@ -1332,6 +1382,17 @@ function createSelectScreen(scene) {
     "START para volver al menú",
     { fontFamily: "monospace", fontSize: "12px", color: "#8b95bb", align: "center" },
   ).setOrigin(0.5));
+
+  // rebote idle de las vistas previas
+  scene.tweens.add({
+    targets: scene.selectScreen.p1Sprite, y: "+=10",
+    duration: 700, yoyo: true, repeat: -1, ease: "Sine.InOut",
+  });
+  scene.tweens.add({
+    targets: scene.selectScreen.p2Sprite, y: "+=10",
+    duration: 700, yoyo: true, repeat: -1, ease: "Sine.InOut", delay: 350,
+  });
+
   scene.selectScreen.container = c;
 }
 
@@ -1465,6 +1526,10 @@ function endMatch(scene) {
   scene.hud.p1.container.setVisible(false);
   scene.hud.p2.container.setVisible(false);
   scene.resultsScreen.result.setText(resultText);
+  scene.resultsScreen.result.setScale(0.6);
+  scene.tweens.add({
+    targets: scene.resultsScreen.result, scale: 1, duration: 400, ease: "Back.Out",
+  });
   scene.resultsScreen.status.setText("");
   scene.resultsScreen.prompt.setVisible(best > 0);
   scene.resultsScreen.initials.setVisible(best > 0);
