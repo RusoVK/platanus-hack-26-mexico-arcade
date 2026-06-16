@@ -1,5 +1,5 @@
 {
-  "game_name": "Ascenso o Deportación",
-  "description": "Endless vertical platformer with a campaign-trail satire twist. Climb platform by platform as a presidential candidate, dodge turrets and drones, and reach higher than your rival. Fall off the screen and you get deported (lose a life). Single player full screen, or two players in independent split-screen racing for altitude.",
-  "player_mode": "two_player"
+  "game_name": "Camino al Azteca",
+  "description": "Isometric Crossy Road-style arcade game set in Mexico City. Navigate from the Periférico highway through the parking lot and into the Estadio Azteca to reach your VIP box. Dodge speeding vehicles, angry protesters, and rowdy football fans across 3 increasingly chaotic levels. Free movement in all directions with isometric perspective.",
+  "player_mode": "single_player"
 }
